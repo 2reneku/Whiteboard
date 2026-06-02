@@ -1,0 +1,6 @@
+{
+  "name": "OSINT Board & Visualizer",
+  "description": "A collaborative visual board and real-time investigation workshop with integrated OSINT lookup tools, automated layouts, and an AI-powered co-analyst.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
