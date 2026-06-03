@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ThemeColors, BoardComment } from '../types';
-import { FolderOpen, Plus, Trash2, Edit2, MessageSquare, Send, Calendar, Clock, Lock, Pointer, Layout, Pencil, Link2, FileText, Grid3X3, Maximize2 } from 'lucide-react';
+import { FolderOpen, Plus, Trash2, Edit2, MessageSquare, Send, Calendar, Clock, Lock, Pointer, Layout, Pencil, Link2, FileText, Grid3X3, Maximize2, Map as MapIcon } from 'lucide-react';
 
 interface Board {
   id: string;
@@ -19,8 +19,8 @@ interface SidebarProps {
   onAddGeneralComment: (text: string) => void;
   themeColors: ThemeColors;
   currentUsername: string;
-  activeTool: 'select' | 'connect' | 'text' | 'hand' | 'pencil';
-  onChangeActiveTool: (tool: 'select' | 'connect' | 'text' | 'hand' | 'pencil') => void;
+  activeTool: 'select' | 'connect' | 'text' | 'hand' | 'pencil' | 'map';
+  onChangeActiveTool: (tool: 'select' | 'connect' | 'text' | 'hand' | 'pencil' | 'map') => void;
   penColor: string;
   setPenColor: (color: string) => void;
   onRecenter: () => void;
@@ -168,6 +168,16 @@ export default function Sidebar({
           >
             <FileText className="w-4 h-4 shrink-0" />
             <span className="text-[11px]">Текст (Rich Text Box)</span>
+          </button>
+
+          <button
+            onClick={() => onChangeActiveTool('map')}
+            className={`w-full p-2 rounded-lg flex items-center space-x-3 transition-colors cursor-pointer text-left ${
+              activeTool === 'map' ? 'bg-zinc-100 text-zinc-950 font-bold' : 'hover:bg-zinc-900/60 hover:text-white'
+            }`}
+          >
+            <MapIcon className="w-4 h-4 shrink-0" />
+            <span className="text-[11px]">Карта (Map Node)</span>
           </button>
 
           <div className="h-px bg-zinc-900 my-1 font-sans" />

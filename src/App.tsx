@@ -5,6 +5,7 @@ import Canvas from './components/Canvas';
 import PropertiesPanel from './components/PropertiesPanel';
 import AIAssistant from './components/AIAssistant';
 import InteractiveBackground from './components/InteractiveBackground';
+import BottomMapPanel from './components/BottomMapPanel';
 import {
   Share2, Sparkles, Maximize2, Grid3X3, CornerUpLeft, X,
   LogOut, Plus, Trash2, Edit2, Pencil, Pointer, Link2, FileText,
@@ -25,8 +26,11 @@ export default function App() {
   // Authentication states
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState('');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [rememberDevice, setRememberDevice] = useState(true);
+  const [securityLogs, setSecurityLogs] = useState<any[]>([]);
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
 
@@ -81,7 +85,7 @@ export default function App() {
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 100, y: 80 });
   const [zoom, setZoom] = useState<number>(1.0);
   const [selectedTheme, setSelectedTheme] = useState<ThemeType>('dark');
-  const [activeTool, setActiveTool] = useState<'select' | 'connect' | 'text' | 'hand' | 'pencil'>('select');
+  const [activeTool, setActiveTool] = useState<'select' | 'connect' | 'text' | 'hand' | 'pencil' | 'map'>('select');
   const [penColor, setPenColor] = useState('#ef4444');
 
   // Side drawers toggling
@@ -133,12 +137,57 @@ export default function App() {
 
   // ──────────────────────────────────────────────────────── AUTHENTICATION CHECKS on Startup
   useEffect(() => {
-    const stored = localStorage.getItem('whiteboard_user');
-    if (stored) {
-      setCurrentUsername(stored);
-      loadUserBoards(stored);
-    }
+    const autoLogin = async () => {
+      const deviceToken = localStorage.getItem('whiteboard_device_token');
+      if (deviceToken) {
+        try {
+          const res = await fetch('/api/auth/auto-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ deviceToken })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setCurrentUsername(data.username);
+            loadUserBoards(data.username);
+            return;
+          }
+        } catch (err) {
+          console.error("Auto login failed:", err);
+        }
+        localStorage.removeItem('whiteboard_device_token');
+      }
+      
+      const stored = localStorage.getItem('whiteboard_user');
+      if (stored) {
+        setCurrentUsername(stored);
+        loadUserBoards(stored);
+      }
+    };
+    
+    autoLogin();
   }, []);
+
+  // Fetch security audit logs when authentication screen is showing
+  useEffect(() => {
+    if (!currentUsername) {
+      const fetchLogs = async () => {
+        try {
+          const res = await fetch('/api/auth/logs');
+          if (res.ok) {
+            const data = await res.json();
+            setSecurityLogs(data.logs || []);
+          }
+        } catch (err) {
+          console.error("Failed to fetch auth logs:", err);
+        }
+      };
+      
+      fetchLogs();
+      const interval = setInterval(fetchLogs, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUsername]);
 
   // Save changes locally if guest/offline
   useEffect(() => {
@@ -277,39 +326,66 @@ export default function App() {
     setAuthError('');
     setAuthSuccess('');
 
-    if (!authUsername.trim() || !authPassword.trim()) {
-      setAuthError('Введите имя пользователя и пароль');
-      return;
+    if (authMode === 'register') {
+      if (!authEmail.trim() || !authUsername.trim() || !authPassword.trim()) {
+        setAuthError('Заполните все три поля: Почта, Имя и Пароль');
+        return;
+      }
+      if (!authEmail.includes('@') || !authEmail.includes('.')) {
+        setAuthError('Укажите корректный Email адрес');
+        return;
+      }
+    } else {
+      if (!authEmail.trim() || !authPassword.trim()) {
+        setAuthError('Введите ваш Email и пароль');
+        return;
+      }
     }
 
     const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+    const payload = authMode === 'register' ? {
+      email: authEmail.trim(),
+      username: authUsername.trim(),
+      password: authPassword.trim(),
+      rememberDevice: rememberDevice
+    } : {
+      email: authEmail.trim(),
+      password: authPassword.trim(),
+      rememberDevice: rememberDevice
+    };
+
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: authUsername.trim(),
-          password: authPassword.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
 
       if (!res.ok) {
-        setAuthError(data.error || 'Произошла непредвиденная ошибка');
+        setAuthError(data.error || 'Аутентификация не удалась.');
         return;
       }
 
       if (authMode === 'register') {
-        setAuthSuccess('Регистрация успешна! Теперь вы можете войти.');
+        setAuthSuccess('Регистрация выполнена успешно! Теперь вы можете войти.');
         setAuthMode('login');
+        if (data.deviceToken && rememberDevice) {
+          localStorage.setItem('whiteboard_device_token', data.deviceToken);
+        }
       } else {
+        if (data.deviceToken && rememberDevice) {
+          localStorage.setItem('whiteboard_device_token', data.deviceToken);
+        } else {
+          localStorage.removeItem('whiteboard_device_token');
+        }
         localStorage.setItem('whiteboard_user', data.username);
         setCurrentUsername(data.username);
         loadUserBoards(data.username);
         setCurrentView('dashboard');
       }
     } catch (err) {
-      setAuthError('Не удалось подключиться к серверу базы данных. Пожалуйста войдите как гость.');
+      setAuthError('Ошибка подключения к серверу авторизации. Войдите как гость.');
     }
   };
 
@@ -324,6 +400,7 @@ export default function App() {
     setCurrentBoardId('');
     setCurrentView('dashboard');
     localStorage.removeItem('whiteboard_user');
+    localStorage.removeItem('whiteboard_device_token');
   };
 
   // ──────────────────────────────────────────────────────── HISTORY UNDO COMPONENT
@@ -476,7 +553,8 @@ export default function App() {
     connectFromNodeId?: string,
     width?: number,
     height?: number,
-    osintData?: OSINTNode['osintData']
+    osintData?: OSINTNode['osintData'],
+    mapData?: OSINTNode['mapData']
   ) => {
     if (!currentUsername) return;
     saveStateToHistory();
@@ -503,6 +581,7 @@ export default function App() {
       manuallyResized: width !== undefined || height !== undefined ? true : undefined,
       osintData,
       osintCollapsed: false,
+      mapData,
     };
 
     const nextNodes = [...nodes, newNode];
@@ -979,59 +1058,94 @@ ${formattedLines}
   // ──────────────────────────────────────────────────────── RENDER THE APPLICATION GATEWAY (LOGIN/REGISTER)
   if (!currentUsername) {
     return (
-      <div className="w-screen h-screen flex items-center justify-center bg-black text-zinc-100 font-sans p-4 antialiased relative overflow-hidden">
+      <div className="w-screen h-screen flex items-center justify-center bg-black text-zinc-100 font-sans p-4 antialiased relative overflow-hidden select-none">
         <InteractiveBackground />
-        <div className="w-full max-w-md bg-zinc-950/70 backdrop-blur-md border border-zinc-900 rounded-xl p-8 shadow-3xl flex flex-col space-y-6 relative overflow-hidden z-10">
+        
+        {/* Login / Register Form Card */}
+        <div className="w-full max-w-md bg-zinc-950/70 backdrop-blur-md border border-zinc-900 rounded-xl p-8 shadow-3xl flex flex-col space-y-6 relative overflow-hidden z-10 transition-all duration-300 animate-fade-in">
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-zinc-800 via-zinc-400 to-zinc-900 animate-pulse" />
           
-          <div className="space-y-2 text-center select-none">
+          <div className="space-y-2 text-center">
             <h1 className="text-xl font-mono tracking-wider text-white uppercase font-black">
               WHITEBOARD OSINT
             </h1>
-            <p className="text-xs text-zinc-450 uppercase tracking-widest leading-relaxed">
+            <p className="text-[10px] text-zinc-400 uppercase tracking-widest leading-relaxed">
               Интерактивная доска для расследований и визуализации карт
             </p>
           </div>
 
           {authError && (
-            <div className="p-3 bg-red-955/20 border border-red-900/60 rounded text-red-400 text-xs font-mono font-medium leading-relaxed">
+            <div className="p-3 bg-red-950/20 border border-red-900/60 rounded text-red-400 text-xs font-mono font-medium leading-relaxed">
               ✖ {authError}
             </div>
           )}
 
           {authSuccess && (
-            <div className="p-3 bg-emerald-955/20 border border-emerald-900/60 rounded text-emerald-400 text-xs font-mono font-medium leading-relaxed">
+            <div className="p-3 bg-emerald-950/20 border border-emerald-900/60 rounded text-emerald-400 text-xs font-mono font-medium leading-relaxed">
               ✔ {authSuccess}
             </div>
           )}
 
           <form onSubmit={handleAuthSubmit} className="space-y-4">
             <div>
-              <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-550 mb-1 font-bold">
-                Логин
+              <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-500 mb-1 font-bold">
+                Почта (Email)
               </label>
               <input
-                type="text"
-                autoComplete="username"
-                className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-620 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
-                placeholder="Имя аналитика"
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
+                type="email"
+                autoComplete="email"
+                required
+                className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
+                placeholder="analyst@osint.int"
+                value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
               />
             </div>
 
+            {authMode === 'register' && (
+              <div>
+                <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-500 mb-1 font-bold">
+                  Имя аналитика / Позывной
+                </label>
+                <input
+                  type="text"
+                  autoComplete="nickname"
+                  required
+                  className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
+                  placeholder="Имя / Позывной"
+                  value={authUsername}
+                  onChange={(e) => setAuthUsername(e.target.value)}
+                />
+              </div>
+            )}
+
             <div>
-              <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-550 mb-1 font-bold">
+              <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-500 mb-1 font-bold">
                 Пароль
               </label>
               <input
                 type="password"
                 autoComplete="current-password"
-                className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-620 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
+                required
+                className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
                 placeholder="••••••••"
                 value={authPassword}
                 onChange={(e) => setAuthPassword(e.target.value)}
               />
+            </div>
+
+            <div className="flex items-center space-x-2 py-1">
+              <input
+                type="checkbox"
+                id="rememberDevice"
+                name="rememberDevice"
+                className="accent-white cursor-pointer w-3.5 h-3.5 focus:ring-0 rounded"
+                checked={rememberDevice}
+                onChange={(e) => setRememberDevice(e.target.checked)}
+              />
+              <label htmlFor="rememberDevice" className="text-[10px] font-mono text-zinc-400 select-none cursor-pointer">
+                Запомнить это устройство (Remember Session Token)
+              </label>
             </div>
 
             <button
@@ -1066,7 +1180,7 @@ ${formattedLines}
               loadUserBoards('Инспектор_Демо');
               setCurrentView('dashboard');
             }}
-            className="w-full py-2 bg-transparent hover:bg-zinc-900/40 text-[10px] font-mono tracking-widest text-zinc-400 font-bold rounded border border-zinc-900 flex items-center justify-center cursor-pointer transition-colors"
+            className="w-full py-2 bg-transparent hover:bg-zinc-900/40 text-[10px] font-mono tracking-widest text-[#a1a1aa] font-bold rounded border border-zinc-900 flex items-center justify-center cursor-pointer transition-colors"
           >
             Войти как Гость (Песочница)
           </button>
@@ -1443,8 +1557,8 @@ ${formattedLines}
               const edge = edges.find((e) => e.id === edgeId);
               if (edge) handleUpdateEdge({ ...edge, label });
             }}
-            onAddTextNode={(x, y, isBoxed, label, textColor, borderColor, bgColor, connectFromNodeId) =>
-              handleAddNode('text', label || 'Заметка...', x, y, isBoxed, textColor, borderColor, bgColor, connectFromNodeId)
+            onAddTextNode={(x, y, isBoxed, label, textColor, borderColor, bgColor, connectFromNodeId, w, h, osint, map) =>
+              handleAddNode('text', label || 'Заметка...', x, y, isBoxed, textColor, borderColor, bgColor, connectFromNodeId, w, h, osint, map)
             }
             onUpdateNode={handleUpdateNode}
             peerCursors={peerCursors}
@@ -1463,9 +1577,38 @@ ${formattedLines}
           />
 
           {/* Quick Stats monitor panel - scale only */}
-          <div className="absolute bottom-4 left-4 p-2.5 bg-zinc-950/90 backdrop-blur-md rounded border border-zinc-850 text-[9.5px] font-mono leading-relaxed pointer-events-none select-none md:block hidden text-zinc-300">
+          <div className="absolute bottom-12 left-4 p-2.5 bg-zinc-950/90 backdrop-blur-md rounded border border-zinc-850 text-[9.5px] font-mono leading-relaxed pointer-events-none select-none md:block hidden text-zinc-300 z-[98]">
             Масштаб: <strong className="text-zinc-100">{Math.round(zoom * 100)}%</strong>
           </div>
+
+          <BottomMapPanel
+            onAddMapCard={(lat, lng, address) => {
+              // Estimate center of visible canvas area
+              const xPoint = -pan.x + (window.innerWidth / 2) - 175;
+              const yPoint = -pan.y + (window.innerHeight / 2) - 120;
+
+              handleAddNode(
+                'text',
+                '📍 ' + address,
+                xPoint,
+                yPoint,
+                true,
+                '#ffffff',
+                '#ef4444',
+                'rgba(24,24,27,0.95)',
+                undefined,
+                350,
+                240,
+                undefined,
+                {
+                  latitude: lat,
+                  longitude: lng,
+                  address: address,
+                  notes: ''
+                }
+              );
+            }}
+          />
         </div>
 
         {/* RIGHT COLLAPSIBLE DRAWER (PROPERTIES INSPECTOR) */}

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, MouseEvent as ReactMouseEvent } from 'react';
 import { OSINTNode, OSINTEdge, PeerCursor, ThemeColors, BoardStroke, BoardComment } from '../types';
 import { Link2, Trash2, Plus, Sparkles, Edit2, Layout, RotateCw } from 'lucide-react';
+import MapCardNode from './MapCardNode';
 
 export const getEdgeBorderPoints = (edge: OSINTEdge, from: OSINTNode, to: OSINTNode) => {
   const getSidePoint = (node: OSINTNode, side: string) => {
@@ -111,12 +112,14 @@ interface CanvasProps {
     bgColor?: string,
     connectFromNodeId?: string,
     width?: number,
-    height?: number
+    height?: number,
+    osintData?: OSINTNode['osintData'],
+    mapData?: OSINTNode['mapData']
   ) => void;
   onUpdateNode: (node: OSINTNode) => void;
   peerCursors: PeerCursor[];
   themeColors: ThemeColors;
-  activeTool: 'select' | 'connect' | 'text' | 'hand' | 'pencil';
+  activeTool: 'select' | 'connect' | 'text' | 'hand' | 'pencil' | 'map';
   zoom: number;
   setZoom: (z: number) => void;
   pan: { x: number; y: number };
@@ -128,7 +131,7 @@ interface CanvasProps {
   onRunOSINTLookup?: (nodeId: string, type: string, subtype: string) => void;
   editingNodeId: string | null;
   onSetEditingNodeId: (id: string | null) => void;
-  onChangeActiveTool?: (tool: 'select' | 'connect' | 'text' | 'hand' | 'pencil') => void;
+  onChangeActiveTool?: (tool: 'select' | 'connect' | 'text' | 'hand' | 'pencil' | 'map') => void;
 }
 
 export default function Canvas({
@@ -721,6 +724,33 @@ export default function Canvas({
       return;
     }
 
+    if (activeTool === 'map') {
+      e.stopPropagation();
+      onAddTextNode(
+        coords.x - 175,
+        coords.y - 120,
+        true,
+        '📍 Карта загружается...',
+        '#ffffff',
+        '#ef4444',
+        'rgba(24, 24, 27, 0.95)',
+        undefined,
+        350,
+        240,
+        undefined,
+        {
+          latitude: 37.7456585,
+          longitude: 29.0949765,
+          address: '14 Mevlana Caddesi, Denizli, Turkey',
+          notes: ''
+        }
+      );
+      if (onChangeActiveTool) {
+        onChangeActiveTool('select');
+      }
+      return;
+    }
+
     if (activeTool === 'hand') {
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -772,12 +802,16 @@ export default function Canvas({
     if (!rect) return;
 
     if (draggedNodeId || draggedStrokeId || resizingNode || isPanning) {
-      e.preventDefault();
-      if (document.activeElement && (document.activeElement as HTMLElement).blur) {
-        (document.activeElement as HTMLElement).blur();
-      }
-      if (window.getSelection) {
-        window.getSelection()?.removeAllRanges();
+      const activeEl = document.activeElement as HTMLElement;
+      const isEditingActiveNode = activeEl && activeEl.id === `editable-${draggedNodeId}`;
+      if (!isEditingActiveNode) {
+        e.preventDefault();
+        if (activeEl && activeEl.blur) {
+          activeEl.blur();
+        }
+        if (window.getSelection) {
+          window.getSelection()?.removeAllRanges();
+        }
       }
     }
 
@@ -1791,10 +1825,10 @@ export default function Canvas({
                 style={{
                   left: `${node.x}px`,
                   top: `${node.y}px`,
-                  width: (resizingNode?.id === node.id || node.manuallyResized) ? `${node.width}px` : 'max-content',
-                  maxWidth: node.manuallyResized ? undefined : '340px',
-                  minWidth: '80px',
-                  minHeight: (resizingNode?.id === node.id || (node.manuallyResized && !node.osintData)) ? `${node.height}px` : 'auto',
+                  width: (resizingNode?.id === node.id) ? `${node.width}px` : 'max-content',
+                  maxWidth: (resizingNode?.id === node.id) ? undefined : '360px',
+                  minWidth: '60px',
+                  minHeight: (resizingNode?.id === node.id) ? `${node.height}px` : 'auto',
                   padding: node.isBoxed === false 
                     ? `${6 * scale}px` 
                     : (node.osintData ? `${8 * scale}px` : (node.label.includes('<div') ? `${7 * scale}px` : `${11 * scale}px`)),
@@ -1805,7 +1839,26 @@ export default function Canvas({
                   if (isEditing) {
                     e.stopPropagation();
                   } else {
+                    const isAlreadySel = selectedNodeIds.includes(node.id);
+                    (e.currentTarget as any)._wasAlreadySelected = isAlreadySel;
+                    (e.currentTarget as any)._mouseDownPos = { x: e.clientX, y: e.clientY };
                     handleNodeMouseDown(e, node.id);
+                  }
+                }}
+                onClick={(e) => {
+                  if (activeTool === 'pencil' || isEditing) return;
+                  e.stopPropagation();
+                  const wasAlreadySel = (e.currentTarget as any)._wasAlreadySelected;
+                  const startPos = (e.currentTarget as any)._mouseDownPos;
+                  
+                  if (wasAlreadySel && startPos) {
+                    const dx = e.clientX - startPos.x;
+                    const dy = e.clientY - startPos.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    // Standard short click without dragging enters edit mode instantly
+                    if (dist < 4) {
+                      setEditingNodeId(node.id);
+                    }
                   }
                 }}
                 onDoubleClick={(e) => {
@@ -1846,24 +1899,36 @@ export default function Canvas({
               >
                 {isEditing ? (
                   <div
+                    key={`editable-field-${node.id}`}
                     ref={(el) => {
                       if (el && isEditing) {
-                        if (el.innerHTML !== node.label && !el.dataset.initialized) {
+                        if (!el.dataset.initialized) {
                           let labelText = node.label || '';
-                          if (labelText === 'Введите текст...' || labelText === 'Заметка...' || labelText === 'Дважды кликните, чтобы ввести текст...') {
+                          if (
+                            labelText === 'Введите текст...' || 
+                            labelText === 'Заметка...' || 
+                            labelText === 'Дважды кликните, чтобы ввести текст...' || 
+                            labelText === 'Дважды кликните для редактирования'
+                          ) {
                             labelText = '';
                           }
                           el.innerHTML = labelText;
                           el.dataset.initialized = 'true';
                           
-                          // Place focus and move cursor to end (collapse range to end so text is not highlighted/deleted)
-                          el.focus();
-                          const range = document.createRange();
-                          const sel = window.getSelection();
-                          range.selectNodeContents(el);
-                          range.collapse(false);
-                          sel?.removeAllRanges();
-                          sel?.addRange(range);
+                          // Focus queuing helper with slight browser microtask tick is extremely reliable
+                          setTimeout(() => {
+                            el.focus();
+                            try {
+                              const range = document.createRange();
+                              const sel = window.getSelection();
+                              range.selectNodeContents(el);
+                              range.collapse(false);
+                              sel?.removeAllRanges();
+                              sel?.addRange(range);
+                            } catch (err) {
+                              console.warn("Focus caret selection placement error:", err);
+                            }
+                          }, 10);
                         }
                       }
                     }}
@@ -1871,7 +1936,11 @@ export default function Canvas({
                     suppressContentEditableWarning
                     id={`editable-${node.id}`}
                     onBlur={(e) => {
-                      onUpdateNode({ ...node, label: e.currentTarget.innerHTML });
+                      let cleaned = e.currentTarget.innerHTML.trim();
+                      if (cleaned === '<br>' || cleaned === '<div><br></div>' || cleaned === '<p><br></p>' || cleaned === '<div></div>' || !cleaned) {
+                        cleaned = '';
+                      }
+                      onUpdateNode({ ...node, label: cleaned });
                       setEditingNodeId(null);
                     }}
                     onInput={(e) => {
@@ -1884,6 +1953,8 @@ export default function Canvas({
                     }}
                     className="w-full text-[1em] bg-transparent border-none text-zinc-100 outline-none resize-none placeholder-zinc-500 leading-relaxed font-normal whitespace-pre-wrap select-text cursor-text pointer-events-auto min-h-0 focus:outline-none [&_p]:m-0 [&_div]:m-0"
                   />
+                ) : node.mapData ? (
+                  <MapCardNode node={node} onUpdateNode={onUpdateNode} />
                 ) : node.osintData ? (
                   <div 
                     className="flex flex-col text-left select-none pointer-events-auto cursor-default font-mono w-full h-full"

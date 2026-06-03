@@ -33,6 +33,12 @@ export interface OSINTNode {
     error?: string;
   };
   osintCollapsed?: boolean;
+  mapData?: {
+    latitude: number;
+    longitude: number;
+    address: string;
+    notes?: string;
+  };
 }
 
 export interface OSINTEdge {

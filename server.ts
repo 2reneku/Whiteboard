@@ -84,45 +84,178 @@ function broadcastToRoom(roomId: string, data: any, excludeRes?: any) {
   clients[roomId] = clients[roomId].filter((r) => !dead.includes(r));
 }
 
+// ──────────────────────────────────────────────────────── SYSTEM AUDIT LOGGING SERVICE
+function logAuthEvent(email: string, event: string, status: "SUCCESS" | "FAILED" | "INFO", req?: express.Request) {
+  try {
+    const db = readDB();
+    db.logs = db.logs || [];
+    
+    let ip = "Unknown IP";
+    if (req) {
+      const forwarded = req.headers["x-forwarded-for"];
+      if (forwarded) {
+        ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0].trim();
+      } else {
+        ip = req.socket.remoteAddress || "127.0.0.1";
+      }
+    }
+    
+    const userAgent = req ? (req.headers["user-agent"] || "Unknown Engine") : "System Server";
+    
+    const newLog = {
+      id: "log-" + Date.now() + Math.floor(Math.random() * 1000),
+      timestamp: new Date().toISOString(),
+      email: email.trim().toLowerCase(),
+      event,
+      status,
+      ip,
+      userAgent: userAgent.split(" ")[0] || "Browser"
+    };
+    
+    db.logs.unshift(newLog);
+    if (db.logs.length > 150) {
+      db.logs = db.logs.slice(0, 150);
+    }
+    writeDB(db);
+    console.log(`[AUTH-LOG] [${newLog.status}] ${newLog.email} - ${newLog.event} (${ip})`);
+  } catch (err) {
+    console.error("System audit logger error:", err);
+  }
+}
+
+function maskEmail(email: string): string {
+  if (!email || !email.includes("@")) return "anonymous@osint.int";
+  const [name, domain] = email.split("@");
+  if (name.length <= 2) return `${name[0]}**@${domain}`;
+  return `${name[0]}**${name[name.length - 1]}@${domain}`;
+}
+
 // ──────────────────────────────────────────────────────── AUTHENTICATION ENDPOINTS
-app.post("/api/auth/register", (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Введите логин и пароль" });
-  }
-
-  const cleanUser = username.trim();
+app.get("/api/auth/logs", (req, res) => {
   const db = readDB();
+  const rawLogs = db.logs || [];
+  const maskedLogs = rawLogs.slice(0, 25).map((l: any) => ({
+    id: l.id,
+    timestamp: l.timestamp,
+    email: maskEmail(l.email),
+    event: l.event,
+    status: l.status,
+    ip: l.ip.includes(":") ? "IPv6" : l.ip,
+    userAgent: l.userAgent
+  }));
+  res.json({ success: true, logs: maskedLogs });
+});
 
-  const exists = db.users.some((u: any) => u.username.toLowerCase() === cleanUser.toLowerCase());
-  if (exists) {
-    return res.status(400).json({ error: "Пользователь с таким именем уже существует" });
+app.post("/api/auth/register", (req, res) => {
+  const { email, username, password, rememberDevice } = req.body;
+  if (!email || !username || !password) {
+    return res.status(400).json({ error: "Пожалуйста, заполните Почту, Логин и Пароль" });
   }
 
-  db.users.push({ username: cleanUser, password });
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanUsername = username.trim();
+  
+  if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+    return res.status(400).json({ error: "Некорректный формат почты (Email)" });
+  }
+
+  if (password.length < 4) {
+    return res.status(400).json({ error: "Пароль должен быть не менее 4 символов" });
+  }
+
+  const db = readDB();
+  db.users = db.users || [];
+
+  const exists = db.users.some((u: any) => u.email && u.email.toLowerCase() === cleanEmail);
+  if (exists) {
+    logAuthEvent(cleanEmail, `Ошибка регистрации: почта уже занята`, "FAILED", req);
+    return res.status(400).json({ error: "Пользователь с такой почтой уже зарегистрирован" });
+  }
+
+  const deviceToken = "dev-" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+  const newUser = {
+    email: cleanEmail,
+    username: cleanUsername,
+    password: password,
+    deviceTokens: rememberDevice ? [deviceToken] : [],
+    createdAt: new Date().toISOString()
+  };
+
+  db.users.push(newUser);
   writeDB(db);
 
-  res.json({ success: true, username: cleanUser });
+  logAuthEvent(cleanEmail, `Успешная регистрация по почте (${cleanUsername})`, "SUCCESS", req);
+
+  res.json({ 
+    success: true, 
+    email: cleanEmail, 
+    username: cleanUsername,
+    deviceToken: rememberDevice ? deviceToken : undefined
+  });
 });
 
 app.post("/api/auth/login", (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Введите логин и пароль" });
+  const { email, password, rememberDevice } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Введите почту и пароль" });
   }
 
-  const cleanUser = username.trim();
+  const cleanEmail = email.trim().toLowerCase();
   const db = readDB();
+  db.users = db.users || [];
 
   const user = db.users.find(
-    (u: any) => u.username.toLowerCase() === cleanUser.toLowerCase() && u.password === password
+    (u: any) => u.email && u.email.toLowerCase() === cleanEmail && u.password === password
   );
 
   if (!user) {
-    return res.status(401).json({ error: "Неверный логин или пароль" });
+    logAuthEvent(cleanEmail, "Неудачная попытка входа: неверные учетные данные", "FAILED", req);
+    return res.status(401).json({ error: "Неверная почта или пароль" });
   }
 
-  res.json({ success: true, username: user.username });
+  const deviceToken = "dev-" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+  user.deviceTokens = user.deviceTokens || [];
+  
+  if (rememberDevice) {
+    user.deviceTokens.push(deviceToken);
+    if (user.deviceTokens.length > 5) {
+      user.deviceTokens = user.deviceTokens.slice(-5);
+    }
+  }
+
+  writeDB(db);
+  logAuthEvent(cleanEmail, "Успешный вход в личную сессию аналитика", "SUCCESS", req);
+
+  res.json({ 
+    success: true, 
+    email: user.email, 
+    username: user.username,
+    deviceToken: rememberDevice ? deviceToken : undefined
+  });
+});
+
+app.post("/api/auth/auto-login", (req, res) => {
+  const { deviceToken } = req.body;
+  if (!deviceToken) {
+    return res.status(400).json({ error: "Токен устройства отсутствует" });
+  }
+
+  const db = readDB();
+  db.users = db.users || [];
+
+  const user = db.users.find((u: any) => u.deviceTokens && u.deviceTokens.includes(deviceToken));
+
+  if (!user) {
+    return res.status(401).json({ error: "Сессия устройства истекла или недействительна" });
+  }
+
+  logAuthEvent(user.email, "Автоматическое распознавание устройства и восстановление сессии", "SUCCESS", req);
+
+  res.json({ 
+    success: true, 
+    email: user.email, 
+    username: user.username 
+  });
 });
 
 // ──────────────────────────────────────────────────────── COLLABORATION SYNC ENDPOINTS
