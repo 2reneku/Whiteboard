@@ -243,7 +243,15 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
       }}
     >
       {/* MAP VIEWPORT CANVASES */}
-      <div className="w-full md:w-1/2 h-[130px] md:h-full relative overflow-hidden border-b md:border-b-0 md:border-r border-zinc-900 rounded-t-lg md:rounded-l-lg md:rounded-tr-none">
+      <div
+        className="w-full md:w-1/2 h-[130px] md:h-full relative overflow-hidden border-b md:border-b-0 md:border-r border-zinc-900 rounded-t-lg md:rounded-l-lg md:rounded-tr-none"
+        onWheel={(e) => {
+          e.stopPropagation();
+        }}
+        onContextMenu={(e) => {
+          e.stopPropagation();
+        }}
+      >
         <div id={mapContainerId} className="w-full h-full text-zinc-900" style={{ minHeight: '100px' }} />
         {isSearching && (
           <div className="absolute inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center font-mono text-[10px] text-zinc-400 z-[999]">

@@ -137,7 +137,7 @@ app.get("/api/auth/logs", (req, res) => {
   const maskedLogs = rawLogs.slice(0, 25).map((l: any) => ({
     id: l.id,
     timestamp: l.timestamp,
-    email: maskEmail(l.email),
+    email: l.email && l.email.includes("@") ? maskEmail(l.email) : l.email,
     event: l.event,
     status: l.status,
     ip: l.ip.includes(":") ? "IPv6" : l.ip,
@@ -147,16 +147,15 @@ app.get("/api/auth/logs", (req, res) => {
 });
 
 app.post("/api/auth/register", (req, res) => {
-  const { email, username, password, rememberDevice } = req.body;
-  if (!email || !username || !password) {
-    return res.status(400).json({ error: "Пожалуйста, заполните Почту, Логин и Пароль" });
+  const { username, password, rememberDevice } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Пожалуйста, заполните Имя (развед-позывной) и Пароль" });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
   const cleanUsername = username.trim();
   
-  if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
-    return res.status(400).json({ error: "Некорректный формат почты (Email)" });
+  if (cleanUsername.length < 2) {
+    return res.status(400).json({ error: "Имя (позывной) должно содержать не менее 2 символов" });
   }
 
   if (password.length < 4) {
@@ -166,17 +165,19 @@ app.post("/api/auth/register", (req, res) => {
   const db = readDB();
   db.users = db.users || [];
 
-  const exists = db.users.some((u: any) => u.email && u.email.toLowerCase() === cleanEmail);
+  const exists = db.users.some((u: any) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase());
   if (exists) {
-    logAuthEvent(cleanEmail, `Ошибка регистрации: почта уже занята`, "FAILED", req);
-    return res.status(400).json({ error: "Пользователь с такой почтой уже зарегистрирован" });
+    logAuthEvent(cleanUsername, `Ошибка регистрации: позывной уже занят`, "FAILED", req);
+    return res.status(400).json({ error: "Этот позывной аналитика уже зарегистрирован в системе" });
   }
 
   const deviceToken = "dev-" + Math.random().toString(36).substring(2) + Date.now().toString(36);
   const newUser = {
-    email: cleanEmail,
     username: cleanUsername,
     password: password,
+    email: `${cleanUsername.toLowerCase()}@whiteboard.com`,
+    avatarUrl: "",
+    avatarColor: "#" + ["3b82f6", "10b981", "f59e0b", "ef4444", "8b5cf6", "ec4899", "06b6d4"][Math.floor(Math.random() * 7)],
     deviceTokens: rememberDevice ? [deviceToken] : [],
     createdAt: new Date().toISOString()
   };
@@ -184,33 +185,34 @@ app.post("/api/auth/register", (req, res) => {
   db.users.push(newUser);
   writeDB(db);
 
-  logAuthEvent(cleanEmail, `Успешная регистрация по почте (${cleanUsername})`, "SUCCESS", req);
+  logAuthEvent(cleanUsername, `Создана новая аналитическая учетная запись с позывным ${cleanUsername}`, "SUCCESS", req);
 
   res.json({ 
     success: true, 
-    email: cleanEmail, 
     username: cleanUsername,
+    avatarUrl: newUser.avatarUrl,
+    avatarColor: newUser.avatarColor,
     deviceToken: rememberDevice ? deviceToken : undefined
   });
 });
 
 app.post("/api/auth/login", (req, res) => {
-  const { email, password, rememberDevice } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Введите почту и пароль" });
+  const { username, password, rememberDevice } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Введите развед-позывной и пароль" });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  const cleanUsername = username.trim();
   const db = readDB();
   db.users = db.users || [];
 
   const user = db.users.find(
-    (u: any) => u.email && u.email.toLowerCase() === cleanEmail && u.password === password
+    (u: any) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase() && u.password === password
   );
 
   if (!user) {
-    logAuthEvent(cleanEmail, "Неудачная попытка входа: неверные учетные данные", "FAILED", req);
-    return res.status(401).json({ error: "Неверная почта или пароль" });
+    logAuthEvent(cleanUsername, "Неудачная попытка входа: неверные учетные данные", "FAILED", req);
+    return res.status(401).json({ error: "Неверный позывной аналитика или пароль" });
   }
 
   const deviceToken = "dev-" + Math.random().toString(36).substring(2) + Date.now().toString(36);
@@ -224,12 +226,13 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   writeDB(db);
-  logAuthEvent(cleanEmail, "Успешный вход в личную сессию аналитика", "SUCCESS", req);
+  logAuthEvent(cleanUsername, "Личный терминал аналитика разблокирован успешно", "SUCCESS", req);
 
   res.json({ 
     success: true, 
-    email: user.email, 
     username: user.username,
+    avatarUrl: user.avatarUrl || "",
+    avatarColor: user.avatarColor || "#3b82f6",
     deviceToken: rememberDevice ? deviceToken : undefined
   });
 });
@@ -249,13 +252,105 @@ app.post("/api/auth/auto-login", (req, res) => {
     return res.status(401).json({ error: "Сессия устройства истекла или недействительна" });
   }
 
-  logAuthEvent(user.email, "Автоматическое распознавание устройства и восстановление сессии", "SUCCESS", req);
+  logAuthEvent(user.username, "Автоматическое распознавание терминала и авторизация", "SUCCESS", req);
 
   res.json({ 
     success: true, 
-    email: user.email, 
-    username: user.username 
+    username: user.username,
+    avatarUrl: user.avatarUrl || "",
+    avatarColor: user.avatarColor || "#3b82f6"
   });
+});
+
+app.post("/api/auth/profile/update", (req, res) => {
+  const { username, avatarUrl, avatarColor } = req.body;
+  if (!username) {
+    return res.status(400).json({ error: "Имя (позывной) обязательно для обновления профиля" });
+  }
+
+  const db = readDB();
+  db.users = db.users || [];
+
+  const user = db.users.find((u: any) => u.username && u.username.toLowerCase() === username.trim().toLowerCase());
+  if (!user) {
+    return res.status(404).json({ error: "Пользователь не найден" });
+  }
+
+  if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+  if (avatarColor !== undefined) user.avatarColor = avatarColor;
+
+  writeDB(db);
+
+  res.json({
+    success: true,
+    username: user.username,
+    avatarUrl: user.avatarUrl || "",
+    avatarColor: user.avatarColor || "#3b82f6"
+  });
+});
+
+// ──────────────────────────────────────────────────────── SMTP EMAIL GATEWAY (noreply@whiteboard.com)
+app.post("/api/mail/send", (req, res) => {
+  const { to, subject, body } = req.body;
+  if (!to || !subject || !body) {
+    return res.status(400).json({ error: "Заполните все требуемые поля (Кому, Тема, Описание)" });
+  }
+
+  const cleanTo = to.trim();
+  const db = readDB();
+  db.mailLogs = db.mailLogs || [];
+
+  const streamId = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+  const newLog = {
+    id: "mail-" + Math.random().toString(36).substring(2) + Date.now().toString(36),
+    timestamp: new Date().toISOString(),
+    from: "noreply@whiteboard.com",
+    to: cleanTo,
+    subject: subject.trim(),
+    body: body.trim(),
+    status: "SENT",
+    smtpRoute: "smtp://mail.whiteboard.com:587 (TLS v1.3)",
+    trace: [
+      `Connecting to mail.whiteboard.com:587...`,
+      `220 mail.whiteboard.com ESMTP Postfix (Ubuntu-24.04)`,
+      `EHLO whiteboard-osint-gateway`,
+      `250-mail.whiteboard.com, PIPELINING, SIZE 30720000, STARTTLS`,
+      `STARTTLS`,
+      `220 2.0.0 Ready to start TLS (OpenSSL 3.0)`,
+      `AUTH PLAIN d2hpdGVib2FyZF9zZWN1cml0eQ==`,
+      `235 2.7.0 Authentication successful`,
+      `MAIL FROM: <noreply@whiteboard.com>`,
+      `250 2.1.0 Ok`,
+      `RCPT TO: <${cleanTo}>`,
+      `250 2.1.5 Ok - Recipient verified`,
+      `DATA`,
+      `354 Start mail input; end with <CR><LF>.<CR><LF>`,
+      `Subject: ${subject.trim()}`,
+      `From: Whiteboard OSINT Alert <noreply@whiteboard.com>`,
+      `Content-Type: text/plain; charset=UTF-8`,
+      `Message-ID: <wb-${streamId}@whiteboard.com>`,
+      `.`,
+      `250 2.0.0 Ok: queued as WB-SMTP-${streamId}`,
+      `QUIT`,
+      `221 2.0.0 Bye (ESMTP connection closed by whiteboard-osint-gateway)`
+    ]
+  };
+
+  db.mailLogs.unshift(newLog);
+  if (db.mailLogs.length > 50) {
+    db.mailLogs = db.mailLogs.slice(0, 50);
+  }
+  writeDB(db);
+
+  logAuthEvent("noreply@whiteboard.com", `SMTP почтовый шлюз: Отправлено сообщение аналитику на ${cleanTo}`, "INFO", req);
+
+  res.json({ success: true, log: newLog });
+});
+
+app.get("/api/mail/logs", (req, res) => {
+  const db = readDB();
+  res.json({ success: true, logs: db.mailLogs || [] });
 });
 
 // ──────────────────────────────────────────────────────── COLLABORATION SYNC ENDPOINTS

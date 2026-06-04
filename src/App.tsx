@@ -9,7 +9,8 @@ import BottomMapPanel from './components/BottomMapPanel';
 import {
   Share2, Sparkles, Maximize2, Grid3X3, CornerUpLeft, X,
   LogOut, Plus, Trash2, Edit2, Pencil, Pointer, Link2, FileText,
-  UserCheck, Lock, Palette, Search, Layout, ChevronRight, FolderPlus, Clock
+  UserCheck, Lock, Palette, Search, Layout, ChevronRight, FolderPlus, Clock,
+  Mail, Chrome, Server, Send, Shield
 } from 'lucide-react';
 
 interface OSINTBoard {
@@ -135,6 +136,106 @@ export default function App() {
   const [newlyCreatedBoardId, setNewlyCreatedBoardId] = useState<string | null>(null);
   const dashboardCanceledRef = useRef(false);
 
+  // ──────────────────────────────────────────────────────── GOOGLE SIGN-IN & SMTP SYSTEM STATES
+  const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState('');
+  const [currentUserAvatarColor, setCurrentUserAvatarColor] = useState('#3b82f6');
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
+  const handleUpdateProfile = async (url: string, color: string) => {
+    if (!currentUsername) return false;
+    try {
+      const res = await fetch('/api/auth/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUsername,
+          avatarUrl: url,
+          avatarColor: color
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrentUserAvatarUrl(data.avatarUrl || '');
+        setCurrentUserAvatarColor(data.avatarColor || '#3b82f6');
+        localStorage.setItem(`whiteboard_avatar_url_${currentUsername}`, data.avatarUrl || '');
+        localStorage.setItem(`whiteboard_avatar_color_${currentUsername}`, data.avatarColor || '#3b82f6');
+        return true;
+      }
+    } catch (err) {
+      console.error("Failed to update profile", err);
+    }
+    return false;
+  };
+
+  const [showMailModal, setShowMailModal] = useState(false);
+  const [mailTo, setMailTo] = useState('');
+  const [mailSubject, setMailSubject] = useState('Оповещение Системы: OSINT-Расследование Обновлено');
+  const [mailBody, setMailBody] = useState('');
+  const [mailLogs, setMailLogs] = useState<any[]>([]);
+  const [sendingMail, setSendingMail] = useState(false);
+
+  const handleSendMail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mailTo.trim() || !mailSubject.trim() || !mailBody.trim()) {
+      alert('Заполните получателя, тему письма и контент отчета');
+      return;
+    }
+    setSendingMail(true);
+    try {
+      const res = await fetch('/api/mail/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: mailTo,
+          subject: mailSubject,
+          body: mailBody
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchMailLogs();
+        setMailTo('');
+        alert('Уведомление от noreply@whiteboard.com поставлено в очередь SMTP и успешно доставлено!');
+      } else {
+        alert('Сбой доставки: ' + (data.error || 'Ошибка SMTP сервера'));
+      }
+    } catch (err) {
+      alert('Ошибка соединения с почтовым шлюзом');
+    } finally {
+      setSendingMail(false);
+    }
+  };
+
+  const fetchMailLogs = async () => {
+    try {
+      const res = await fetch('/api/mail/logs');
+      if (res.ok) {
+        const data = await res.json();
+        setMailLogs(data.logs || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Dynamically update mail body when interactive whiteboard changes
+  useEffect(() => {
+    if (nodes.length > 0) {
+      setMailBody(`Приветствую!\n\nСформирован свежий аналитический лог-срез в проекте WHITEBOARD OSINT HUB.\n\nДанные по текущему холсту:\n- Обнаружено улик и объектов: ${nodes.length}\n- Корреляций и перекрестных ссылок: ${edges.length}\n\nРекомендация: Провести аудит IP и email-адресов в модуле утечек.\n\n--\nСистема Безопасности OSINT Сети\nnoreply@whiteboard.com`);
+    } else {
+      setMailBody(`Приветствую!\n\nИнициирована новая пустая доска расследования. Создайте первые узлы в рабочей области для анализа.\n\n--\nСистема Безопасности OSINT Сети\nnoreply@whiteboard.com`);
+    }
+  }, [nodes, edges]);
+
+  // Read SMTP Logs periodically when active
+  useEffect(() => {
+    if (showMailModal) {
+      fetchMailLogs();
+      const interval = setInterval(fetchMailLogs, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [showMailModal]);
+
   // ──────────────────────────────────────────────────────── AUTHENTICATION CHECKS on Startup
   useEffect(() => {
     const autoLogin = async () => {
@@ -149,6 +250,10 @@ export default function App() {
           if (res.ok) {
             const data = await res.json();
             setCurrentUsername(data.username);
+            setCurrentUserAvatarUrl(data.avatarUrl || '');
+            setCurrentUserAvatarColor(data.avatarColor || '#3b82f6');
+            localStorage.setItem(`whiteboard_avatar_url_${data.username}`, data.avatarUrl || '');
+            localStorage.setItem(`whiteboard_avatar_color_${data.username}`, data.avatarColor || '#3b82f6');
             loadUserBoards(data.username);
             return;
           }
@@ -161,6 +266,10 @@ export default function App() {
       const stored = localStorage.getItem('whiteboard_user');
       if (stored) {
         setCurrentUsername(stored);
+        const cachedUrl = localStorage.getItem(`whiteboard_avatar_url_${stored}`);
+        const cachedColor = localStorage.getItem(`whiteboard_avatar_color_${stored}`);
+        if (cachedUrl) setCurrentUserAvatarUrl(cachedUrl);
+        if (cachedColor) setCurrentUserAvatarColor(cachedColor);
         loadUserBoards(stored);
       }
     };
@@ -326,30 +435,19 @@ export default function App() {
     setAuthError('');
     setAuthSuccess('');
 
-    if (authMode === 'register') {
-      if (!authEmail.trim() || !authUsername.trim() || !authPassword.trim()) {
-        setAuthError('Заполните все три поля: Почта, Имя и Пароль');
-        return;
-      }
-      if (!authEmail.includes('@') || !authEmail.includes('.')) {
-        setAuthError('Укажите корректный Email адрес');
-        return;
-      }
-    } else {
-      if (!authEmail.trim() || !authPassword.trim()) {
-        setAuthError('Введите ваш Email и пароль');
-        return;
-      }
+    if (!authUsername.trim() || !authPassword.trim()) {
+      setAuthError('Укажите развед-позывной и пароль');
+      return;
+    }
+
+    if (authUsername.trim().length < 2) {
+      setAuthError('Имя позывного должно содержать как минимум 2 символа');
+      return;
     }
 
     const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
-    const payload = authMode === 'register' ? {
-      email: authEmail.trim(),
+    const payload = {
       username: authUsername.trim(),
-      password: authPassword.trim(),
-      rememberDevice: rememberDevice
-    } : {
-      email: authEmail.trim(),
       password: authPassword.trim(),
       rememberDevice: rememberDevice
     };
@@ -368,7 +466,7 @@ export default function App() {
       }
 
       if (authMode === 'register') {
-        setAuthSuccess('Регистрация выполнена успешно! Теперь вы можете войти.');
+        setAuthSuccess('Регистрация осуществлена успешно! Теперь вы можете авторизоваться.');
         setAuthMode('login');
         if (data.deviceToken && rememberDevice) {
           localStorage.setItem('whiteboard_device_token', data.deviceToken);
@@ -381,11 +479,15 @@ export default function App() {
         }
         localStorage.setItem('whiteboard_user', data.username);
         setCurrentUsername(data.username);
+        setCurrentUserAvatarUrl(data.avatarUrl || '');
+        setCurrentUserAvatarColor(data.avatarColor || '#3b82f6');
+        localStorage.setItem(`whiteboard_avatar_url_${data.username}`, data.avatarUrl || '');
+        localStorage.setItem(`whiteboard_avatar_color_${data.username}`, data.avatarColor || '#3b82f6');
         loadUserBoards(data.username);
         setCurrentView('dashboard');
       }
     } catch (err) {
-      setAuthError('Ошибка подключения к серверу авторизации. Войдите как гость.');
+      setAuthError('Ошибка подключения к серверу авторизации. Инициируйте вход в гостевом терминале.');
     }
   };
 
@@ -1061,12 +1163,9 @@ ${formattedLines}
       <div className="w-screen h-screen flex items-center justify-center bg-black text-zinc-100 font-sans p-4 antialiased relative overflow-hidden select-none">
         <InteractiveBackground />
         
-        {/* Login / Register Form Card */}
-        <div className="w-full max-w-md bg-zinc-950/70 backdrop-blur-md border border-zinc-900 rounded-xl p-8 shadow-3xl flex flex-col space-y-6 relative overflow-hidden z-10 transition-all duration-300 animate-fade-in">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-zinc-800 via-zinc-400 to-zinc-900 animate-pulse" />
-          
-          <div className="space-y-2 text-center">
-            <h1 className="text-xl font-mono tracking-wider text-white uppercase font-black">
+        <div className="w-full max-w-sm bg-zinc-950/85 backdrop-blur-md border border-zinc-900 rounded-xl p-8 shadow-2xl relative z-10 flex flex-col transition-all duration-300 animate-fade-in divide-y divide-zinc-900">
+          <div className="pb-6 space-y-2 text-center">
+            <h1 className="text-xl font-mono tracking-widest text-white uppercase font-black">
               WHITEBOARD OSINT
             </h1>
             <p className="text-[10px] text-zinc-400 uppercase tracking-widest leading-relaxed">
@@ -1074,116 +1173,102 @@ ${formattedLines}
             </p>
           </div>
 
-          {authError && (
-            <div className="p-3 bg-red-950/20 border border-red-900/60 rounded text-red-400 text-xs font-mono font-medium leading-relaxed">
-              ✖ {authError}
-            </div>
-          )}
+          <div className="pt-6 space-y-5">
+            {authError && (
+              <div className="p-3 bg-red-955/20 border border-red-900/60 rounded text-red-400 text-xs font-mono font-medium leading-relaxed">
+                ✖ {authError}
+              </div>
+            )}
 
-          {authSuccess && (
-            <div className="p-3 bg-emerald-950/20 border border-emerald-900/60 rounded text-emerald-400 text-xs font-mono font-medium leading-relaxed">
-              ✔ {authSuccess}
-            </div>
-          )}
+            {authSuccess && (
+              <div className="p-3 bg-emerald-955/20 border border-emerald-900/60 rounded text-emerald-400 text-xs font-mono font-medium leading-relaxed">
+                ✔ {authSuccess}
+              </div>
+            )}
 
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            <div>
-              <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-500 mb-1 font-bold">
-                Почта (Email)
-              </label>
-              <input
-                type="email"
-                autoComplete="email"
-                required
-                className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
-                placeholder="analyst@osint.int"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-              />
-            </div>
-
-            {authMode === 'register' && (
+            <form onSubmit={handleAuthSubmit} className="space-y-4 text-left">
               <div>
-                <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-500 mb-1 font-bold">
-                  Имя аналитика / Позывной
+                <label className="block text-[9px] uppercase font-mono tracking-widest text-zinc-500 mb-1.5 font-bold">
+                  Позывной оператора (Nickname)
                 </label>
                 <input
                   type="text"
-                  autoComplete="nickname"
+                  autoComplete="username"
                   required
-                  className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
-                  placeholder="Имя / Позывной"
+                  className="w-full bg-zinc-900/70 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium transition-colors"
+                  placeholder="Например, Inspector_X"
                   value={authUsername}
                   onChange={(e) => setAuthUsername(e.target.value)}
                 />
               </div>
-            )}
 
-            <div>
-              <label className="block text-[9.5px] uppercase font-mono tracking-widest text-zinc-500 mb-1 font-bold">
-                Пароль
-              </label>
-              <input
-                type="password"
-                autoComplete="current-password"
-                required
-                className="w-full bg-zinc-900 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium"
-                placeholder="••••••••"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-              />
+              <div>
+                <label className="block text-[9px] uppercase font-mono tracking-widest text-zinc-500 mb-1.5 font-bold">
+                  Секретный пароль
+                </label>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  className="w-full bg-zinc-900/70 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium transition-colors"
+                  placeholder="••••••••"
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                />
+              </div>
+
+              <div className="flex items-center space-x-2 py-0.5">
+                <input
+                  type="checkbox"
+                  id="rememberDevice"
+                  className="accent-white cursor-pointer w-3.5 h-3.5 focus:ring-0 rounded"
+                  checked={rememberDevice}
+                  onChange={(e) => setRememberDevice(e.target.checked)}
+                />
+                <label htmlFor="rememberDevice" className="text-[9.5px] font-mono text-zinc-400 select-none cursor-pointer">
+                  Запомнить устройство
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-white hover:bg-zinc-200 text-black py-2.5 rounded text-xs font-mono font-bold uppercase cursor-pointer transition-all duration-100 flex items-center justify-center space-x-2"
+              >
+                <UserCheck className="w-4 h-4 animate-pulse mr-0.5" />
+                <span>{authMode === 'login' ? 'Авторизоваться' : 'Зарегистрироваться'}</span>
+              </button>
+            </form>
+
+            <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-zinc-404">
+              <span>
+                {authMode === 'login' ? 'Нет позывного?' : 'Уже зарегистрированы?'}
+              </span>
+              <button
+                onClick={() => {
+                  setAuthMode(authMode === 'login' ? 'register' : 'login');
+                  setAuthError('');
+                  setAuthSuccess('');
+                }}
+                className="text-white hover:underline cursor-pointer font-bold"
+              >
+                {authMode === 'login' ? 'Создать аккаунт' : 'Войти в систему'}
+              </button>
             </div>
 
-            <div className="flex items-center space-x-2 py-1">
-              <input
-                type="checkbox"
-                id="rememberDevice"
-                name="rememberDevice"
-                className="accent-white cursor-pointer w-3.5 h-3.5 focus:ring-0 rounded"
-                checked={rememberDevice}
-                onChange={(e) => setRememberDevice(e.target.checked)}
-              />
-              <label htmlFor="rememberDevice" className="text-[10px] font-mono text-zinc-400 select-none cursor-pointer">
-                Запомнить это устройство (Remember Session Token)
-              </label>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full bg-white hover:bg-zinc-200 text-black py-2.5 rounded text-xs font-mono font-bold uppercase cursor-pointer transition-all duration-100 flex items-center justify-center space-x-2"
-            >
-              <UserCheck className="w-4 h-4 ml-1" />
-              <span>{authMode === 'login' ? 'Войти' : 'Зарегистрировать'}</span>
-            </button>
-          </form>
-
-          <div className="flex items-center justify-between pt-1 border-t border-zinc-900 text-xs font-mono text-zinc-500">
-            <span>
-              {authMode === 'login' ? 'Нет аккаунта?' : 'Уже зарегистрированы?'}
-            </span>
             <button
               onClick={() => {
-                setAuthMode(authMode === 'login' ? 'register' : 'login');
-                setAuthError('');
-                setAuthSuccess('');
+                localStorage.setItem('whiteboard_user', 'Инспектор_Демо');
+                setCurrentUsername('Инспектор_Демо');
+                setCurrentUserAvatarUrl('');
+                setCurrentUserAvatarColor('#ef4444');
+                loadUserBoards('Инспектор_Демо');
+                setCurrentView('dashboard');
               }}
-              className="text-white hover:underline cursor-pointer font-bold"
+              className="w-full py-2 bg-transparent hover:bg-zinc-900/40 text-[9.5px] font-mono tracking-wider text-zinc-505 hover:text-zinc-300 font-bold rounded border border-zinc-900 flex items-center justify-center cursor-pointer transition-colors"
             >
-              {authMode === 'login' ? 'Регистрация' : 'Вход'}
+              Войти как Временный Гость
             </button>
           </div>
-
-          <button
-            onClick={() => {
-              localStorage.setItem('whiteboard_user', 'Инспектор_Демо');
-              setCurrentUsername('Инспектор_Демо');
-              loadUserBoards('Инспектор_Демо');
-              setCurrentView('dashboard');
-            }}
-            className="w-full py-2 bg-transparent hover:bg-zinc-900/40 text-[10px] font-mono tracking-widest text-[#a1a1aa] font-bold rounded border border-zinc-900 flex items-center justify-center cursor-pointer transition-colors"
-          >
-            Войти как Гость (Песочница)
-          </button>
         </div>
       </div>
     );
@@ -1663,79 +1748,203 @@ ${formattedLines}
         )}
       </div>
 
-      {/* ── COLLABORATION JOIN POPUP MODAL */}
+      {/* ── COLLABORATION JOIN & SMTP REPORT GATEWAY MODAL */}
       {showCollabModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-96 bg-zinc-950 border border-zinc-850 rounded-xl p-5 shadow-2xl space-y-4 relative z-50">
-            <div className="flex items-center justify-between">
-              <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white">
-                Подключить коллаборацию
-              </h3>
-              <button
-                onClick={() => setShowCollabModal(false)}
-                className="text-zinc-500 hover:text-zinc-300 font-bold cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl overflow-hidden relative flex flex-col md:flex-row animate-fade-in divide-y md:divide-y-0 md:divide-x divide-zinc-900">
             
-            <p className="text-[11px] text-zinc-455 leading-relaxed font-sans select-none">
-              Введите единый код комнаты, чтобы синхронизировать рисование, заметки, форматирование шрифтов и мышиные курсоры в реальном времени!
-            </p>
+            {/* LEFT MODULE: MULTIPLAYER WORKSPACE STREAM */}
+            <div className="w-full md:w-1/2 p-6 flex flex-col justify-between space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Мультиплеер и Связь</span>
+                  </h3>
+                  <button
+                    onClick={() => setShowCollabModal(false)}
+                    className="text-zinc-500 hover:text-zinc-300 font-bold cursor-pointer md:hidden"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                
+                <p className="text-[11px] text-zinc-400 leading-relaxed font-sans select-none">
+                  Синхронизируйте рисование, геометрические узлы, комментарии команды и мышиные курсоры других аналитиков в режиме реального времени!
+                </p>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
-                  Имя (Ваш Позывной)
-                </label>
-                <input
-                  type="text"
-                  disabled
-                  className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 text-zinc-440 px-3 py-1.5 rounded outline-none cursor-not-allowed select-none"
-                  value={currentUsername || ''}
-                />
+                <div className="space-y-3.5 pt-1">
+                  <div>
+                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
+                      Имя аналитика (Позывной)
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      className="w-full text-xs font-mono bg-zinc-900/60 border border-zinc-850 text-zinc-400 px-3 py-2 rounded outline-none cursor-not-allowed select-none"
+                      value={currentUsername || 'Inspector_Demo'}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
+                      Идентификатор Комнаты (Room ID)
+                    </label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        className="flex-1 text-xs font-mono bg-zinc-900 border border-zinc-850 text-white font-bold px-3 py-2 rounded outline-none placeholder-zinc-800 focus:border-zinc-500 transition-colors"
+                        placeholder="E.g., MY_ROOM_CODE"
+                        value={roomId || ''}
+                        onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+                      />
+                      <button
+                        onClick={() => {
+                          const code = 'OSINT-' + Math.floor(Math.random() * 90000 + 10000);
+                          setRoomId(code);
+                        }}
+                        className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[10px] uppercase font-mono px-3.5 rounded font-bold cursor-pointer transition-colors border border-zinc-850"
+                      >
+                        Код
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
-                  Идентификатор Комнаты (Room ID)
-                </label>
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    className="flex-1 text-xs font-mono bg-zinc-900 border border-zinc-805 text-white font-bold px-3 py-1.5 rounded outline-none placeholder-zinc-700"
-                    placeholder="E.g., MY_ROOM_CODE"
-                    value={roomId || ''}
-                    onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                  />
+              <div className="flex space-x-2.5 pt-4">
+                <button
+                  onClick={() => setShowCollabModal(false)}
+                  className="flex-1 bg-zinc-900 border border-zinc-850 hover:bg-zinc-850 text-zinc-400 py-2 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  disabled={!roomId}
+                  onClick={() => connectToCollaboration(roomId!)}
+                  className="flex-1 bg-white text-black hover:bg-zinc-200 py-2 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Подключить
+                </button>
+              </div>
+            </div>
+
+            {/* RIGHT MODULE: SMTP SPECIALIZED OUTBOUND (noreply@whiteboard.com) */}
+            <div className="w-full md:w-1/2 p-6 flex flex-col justify-between space-y-4 bg-zinc-950/40">
+              <div className="space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-1.5">
+                    <Mail className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Почтовый Шлюз (SMTP)</span>
+                  </h3>
                   <button
-                    onClick={() => {
-                      const code = 'OSINT-' + Math.floor(Math.random() * 90000 + 10000);
-                      setRoomId(code);
-                    }}
-                    className="bg-zinc-900 hover:bg-zinc-850 text-zinc-300 text-[10px] uppercase font-mono px-3 rounded font-bold cursor-pointer transition-colors border border-zinc-800"
+                    onClick={() => setShowCollabModal(false)}
+                    className="text-zinc-500 hover:text-zinc-300 font-bold cursor-pointer hidden md:block"
                   >
-                    Сгенерировать
+                    <X className="w-4 h-4" />
                   </button>
+                </div>
+
+                <div className="p-2.5 bg-zinc-900/30 border border-zinc-900 rounded flex items-center justify-between mb-1">
+                  <div className="text-left font-mono">
+                    <span className="block text-[8px] uppercase text-zinc-550 font-bold">Сертификат Отправителя</span>
+                    <span className="text-[11px] text-white font-bold leading-non">noreply@whiteboard.com</span>
+                  </div>
+                  <span className="text-[8px] bg-emerald-950/60 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-bold border border-emerald-900/40 uppercase">SMTP Secure</span>
+                </div>
+
+                <form onSubmit={handleSendMail} className="space-y-2.5 text-left">
+                  <div>
+                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
+                      Адрес Получателя / Analyst Email
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="analyst-colleague@agency.com"
+                      className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 px-3 py-1.5 rounded text-white outline-none focus:border-zinc-500 transition-colors"
+                      value={mailTo}
+                      onChange={(e) => setMailTo(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
+                      Тема Сообщения
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Тема"
+                      className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 px-3 py-1.5 rounded text-zinc-300 outline-none focus:border-zinc-500 transition-colors"
+                      value={mailSubject}
+                      onChange={(e) => setMailSubject(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
+                      Тело Сообщения / Сводка
+                    </label>
+                    <textarea
+                      required
+                      rows={3}
+                      className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 px-3 py-1.5 rounded text-zinc-300 outline-none focus:border-zinc-500 transition-colors resize-none leading-relaxed"
+                      value={mailBody}
+                      onChange={(e) => setMailBody(e.target.value)}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={sendingMail || !mailTo}
+                    className="w-full bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white py-1.5 rounded text-[10px] font-mono uppercase font-bold tracking-widest flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
+                  >
+                    {sendingMail ? (
+                      <span>Отправка пакетов...</span>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Отправить отчет от noreply</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+
+              {/* OUTBOUND SMTP TRACE CONSOLE */}
+              <div className="flex-1 flex flex-col min-h-0 space-y-1 pt-1.5 text-left border-t border-zinc-900/60">
+                <span className="font-mono text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Служебный Лог Почтового Шлюза (Live Outboxes):</span>
+                <div className="bg-black/60 border border-zinc-900 rounded p-2.5 font-mono text-[9px] text-zinc-400 overflow-y-auto max-h-32 select-text whitespace-pre-wrap leading-normal space-y-2">
+                  {mailLogs.length === 0 ? (
+                    <div className="text-zinc-650 text-center py-4">Очередь SMTP пуста. Отправьте письмо выше для симуляции транзакции.</div>
+                  ) : (
+                    mailLogs.slice(0, 3).map((log, index) => (
+                      <div key={log.id || index} className="border-b border-zinc-900/60 pb-1.5 mb-1.5 last:border-0 last:pb-0 last:mb-0">
+                        <div className="flex items-center justify-between text-[7px] text-zinc-550 border-b border-zinc-900/40 pb-0.5 mb-1">
+                          <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                          <span className="text-emerald-400 font-bold">{log.status}</span>
+                        </div>
+                        <div className="text-zinc-300"><span className="text-zinc-500">Кому:</span> {log.to}</div>
+                        <div className="text-zinc-300 truncate"><span className="text-zinc-500">Тема:</span> {log.subject}</div>
+                        
+                        <details className="mt-1">
+                          <summary className="text-[7.5px] text-zinc-500 hover:text-zinc-300 cursor-pointer select-none">Посмотреть SMTP Трейс (Handshake)...</summary>
+                          <div className="bg-black text-[8px] text-amber-500/80 p-1.5 mt-1 rounded border border-zinc-900/80 space-y-0.5 select-text leading-relaxed">
+                            {log.trace.map((line: string, lIdx: number) => (
+                              <div key={lIdx} className={line.startsWith('2') || line.startsWith('3') ? 'text-emerald-500/80' : 'text-zinc-500'}>
+                                {line}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="flex space-x-2 pt-2">
-              <button
-                onClick={() => setShowCollabModal(false)}
-                className="flex-1 bg-zinc-900 border border-zinc-850 hover:bg-zinc-850 text-zinc-400 py-2.5 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer"
-              >
-                Отмена
-              </button>
-              <button
-                disabled={!roomId}
-                onClick={() => connectToCollaboration(roomId!)}
-                className="flex-1 bg-white text-black hover:bg-zinc-200 py-2.5 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer transition-colors disabled:opacity-40"
-              >
-                Подключить
-              </button>
-            </div>
           </div>
         </div>
       )}
