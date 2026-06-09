@@ -7,7 +7,7 @@ import AIAssistant from './components/AIAssistant';
 import InteractiveBackground from './components/InteractiveBackground';
 import BottomMapPanel from './components/BottomMapPanel';
 import {
-  Share2, Sparkles, Maximize2, Grid3X3, CornerUpLeft, X,
+  Share2, Sparkles, Maximize2, Grid3X3, CornerUpLeft, X, Check,
   LogOut, Plus, Trash2, Edit2, Pencil, Pointer, Link2, FileText,
   UserCheck, Lock, Palette, Search, Layout, ChevronRight, FolderPlus, Clock,
   Mail, Chrome, Server, Send, Shield
@@ -21,9 +21,16 @@ interface OSINTBoard {
   strokes: BoardStroke[];
   comments: BoardComment[];
   updatedAt: number;
+  isCollab?: boolean;
+  roomId?: string;
 }
 
 export default function App() {
+  // Check for invite link on loading
+  const [pendingInvite, setPendingInvite] = useState<{ roomId: string; name: string } | null>(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const [toastNotification, setToastNotification] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
   // Authentication states
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
@@ -140,6 +147,8 @@ export default function App() {
   const [currentUserAvatarUrl, setCurrentUserAvatarUrl] = useState('');
   const [currentUserAvatarColor, setCurrentUserAvatarColor] = useState('#3b82f6');
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [tempAvatarUrl, setTempAvatarUrl] = useState('');
+  const [tempAvatarColor, setTempAvatarColor] = useState('#3b82f6');
 
   const handleUpdateProfile = async (url: string, color: string) => {
     if (!currentUsername) return false;
@@ -167,74 +176,17 @@ export default function App() {
     return false;
   };
 
-  const [showMailModal, setShowMailModal] = useState(false);
-  const [mailTo, setMailTo] = useState('');
-  const [mailSubject, setMailSubject] = useState('Оповещение Системы: OSINT-Расследование Обновлено');
-  const [mailBody, setMailBody] = useState('');
-  const [mailLogs, setMailLogs] = useState<any[]>([]);
-  const [sendingMail, setSendingMail] = useState(false);
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
 
-  const handleSendMail = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!mailTo.trim() || !mailSubject.trim() || !mailBody.trim()) {
-      alert('Заполните получателя, тему письма и контент отчета');
-      return;
+  const handleDeleteComment = (id: string) => {
+    saveStateToHistory();
+    const nextComments = comments.filter(c => c.id !== id);
+    setComments(nextComments);
+    if (selectedCommentId === id) {
+      setSelectedCommentId(null);
     }
-    setSendingMail(true);
-    try {
-      const res = await fetch('/api/mail/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: mailTo,
-          subject: mailSubject,
-          body: mailBody
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        fetchMailLogs();
-        setMailTo('');
-        alert('Уведомление от noreply@whiteboard.com поставлено в очередь SMTP и успешно доставлено!');
-      } else {
-        alert('Сбой доставки: ' + (data.error || 'Ошибка SMTP сервера'));
-      }
-    } catch (err) {
-      alert('Ошибка соединения с почтовым шлюзом');
-    } finally {
-      setSendingMail(false);
-    }
+    pushCollabUpdate(nodes, edges, strokes, nextComments);
   };
-
-  const fetchMailLogs = async () => {
-    try {
-      const res = await fetch('/api/mail/logs');
-      if (res.ok) {
-        const data = await res.json();
-        setMailLogs(data.logs || []);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  // Dynamically update mail body when interactive whiteboard changes
-  useEffect(() => {
-    if (nodes.length > 0) {
-      setMailBody(`Приветствую!\n\nСформирован свежий аналитический лог-срез в проекте WHITEBOARD OSINT HUB.\n\nДанные по текущему холсту:\n- Обнаружено улик и объектов: ${nodes.length}\n- Корреляций и перекрестных ссылок: ${edges.length}\n\nРекомендация: Провести аудит IP и email-адресов в модуле утечек.\n\n--\nСистема Безопасности OSINT Сети\nnoreply@whiteboard.com`);
-    } else {
-      setMailBody(`Приветствую!\n\nИнициирована новая пустая доска расследования. Создайте первые узлы в рабочей области для анализа.\n\n--\nСистема Безопасности OSINT Сети\nnoreply@whiteboard.com`);
-    }
-  }, [nodes, edges]);
-
-  // Read SMTP Logs periodically when active
-  useEffect(() => {
-    if (showMailModal) {
-      fetchMailLogs();
-      const interval = setInterval(fetchMailLogs, 4000);
-      return () => clearInterval(interval);
-    }
-  }, [showMailModal]);
 
   // ──────────────────────────────────────────────────────── AUTHENTICATION CHECKS on Startup
   useEffect(() => {
@@ -276,6 +228,91 @@ export default function App() {
     
     autoLogin();
   }, []);
+
+  // Check for invite code in URL search params on mount
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const inviteCode = params.get('invite');
+      let inviteName = params.get('name');
+      if (inviteCode) {
+        if (inviteName) {
+          try {
+            inviteName = decodeURIComponent(inviteName);
+          } catch (e) {
+            inviteName = inviteName.replace(/%[0-9A-F]{2}/gi, ' ');
+          }
+        }
+        setPendingInvite({
+          roomId: inviteCode.trim().toUpperCase(),
+          name: inviteName ? inviteName.trim() : 'Совместное расследование'
+        });
+      }
+    } catch (e) {
+      console.error('Failed to parse invite link params', e);
+    }
+  }, []);
+
+  // Process invite code once user boards are loaded and username exists
+  useEffect(() => {
+    if (currentUsername && pendingInvite && boards.length > 0) {
+      // Is there already a board in our list that points to this roomId?
+      const existingBoard = boards.find(b => b.roomId === pendingInvite.roomId);
+      if (existingBoard) {
+        // Switch board
+        handleSwitchBoard(existingBoard.id);
+        setCurrentView('board');
+        setToastNotification({
+          message: `Переключение на существующую кооперативную доску: "${existingBoard.name}"`,
+          type: 'info'
+        });
+        setTimeout(() => setToastNotification(null), 4000);
+      } else {
+        // Create a new collaborative board
+        const newBoard: OSINTBoard = {
+          id: 'board-' + Date.now(),
+          name: `[КООП] ${pendingInvite.name}`,
+          nodes: [],
+          edges: [],
+          strokes: [],
+          comments: [],
+          updatedAt: Date.now(),
+          isCollab: true,
+          roomId: pendingInvite.roomId
+        };
+        const nextList = [newBoard, ...boards];
+        setBoards(nextList);
+        localStorage.setItem(`whiteboard_boards_${currentUsername}`, JSON.stringify(nextList));
+        
+        // Select it
+        setCurrentBoardId(newBoard.id);
+        setNodes([]);
+        setEdges([]);
+        setStrokes([]);
+        setComments([]);
+        setCurrentView('board');
+        
+        // Auto connect
+        connectToCollaboration(pendingInvite.roomId);
+        
+        setToastNotification({
+          message: `Кооперативная доска "${pendingInvite.name}" успешно подключена и добавлена в ваши проекты!`,
+          type: 'success'
+        });
+        setTimeout(() => setToastNotification(null), 5000);
+      }
+      
+      setPendingInvite(null);
+
+      // Clean search query params so page refresh is clean
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('invite');
+        url.searchParams.delete('name');
+        window.history.replaceState({}, document.title, url.pathname);
+      } catch (err) {}
+    }
+  }, [currentUsername, pendingInvite, boards]);
 
   // Fetch security audit logs when authentication screen is showing
   useEffect(() => {
@@ -360,6 +397,15 @@ export default function App() {
           setSelectedEdgeId(null);
           pushCollabUpdate(nodes, nextEdges, strokes, comments);
         }
+
+        // Remove selected comment
+        if (selectedCommentId) {
+          saveStateToHistory();
+          const nextComments = comments.filter(c => c.id !== selectedCommentId);
+          setComments(nextComments);
+          setSelectedCommentId(null);
+          pushCollabUpdate(nodes, edges, strokes, nextComments);
+        }
       } else if (e.ctrlKey && code === 'KeyZ') {
         e.preventDefault();
         handleUndo();
@@ -368,7 +414,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeIds, selectedStrokeIds, selectedEdgeId, nodes, edges, strokes, comments, history]);
+  }, [selectedNodeIds, selectedStrokeIds, selectedEdgeId, selectedCommentId, nodes, edges, strokes, comments, history]);
 
   const loadUserBoards = (username: string) => {
     const raw = localStorage.getItem(`whiteboard_boards_${username}`);
@@ -526,7 +572,7 @@ export default function App() {
     if (!currentUsername) return;
     handleDisconnectCollab();
 
-    const url = `/api/collab/${roomCode}/stream?name=${encodeURIComponent(currentUsername)}&color=${encodeURIComponent(penColor)}`;
+    const url = `/api/collab/${roomCode}/stream?name=${encodeURIComponent(currentUsername)}&color=${encodeURIComponent(penColor)}&avatarUrl=${encodeURIComponent(currentUserAvatarUrl)}&avatarColor=${encodeURIComponent(currentUserAvatarColor)}`;
     const source = new EventSource(url);
     eventSourceRef.current = source;
 
@@ -535,22 +581,38 @@ export default function App() {
         const data = JSON.parse(event.data);
         if (data.type === 'init') {
           const nextSrv = data.nodes || [];
-          const currEditId = editingNodeIdRef.current;
-          if (currEditId) {
-            const merged = nextSrv.map((sn: OSINTNode) => {
-              if (sn.id === currEditId) {
-                const currentLocal = nodesRef.current.find(n => n.id === currEditId);
-                return currentLocal || sn;
-              }
-              return sn;
-            });
-            setNodes(merged);
+          const hasServerData = nextSrv.length > 0 || (data.edges && data.edges.length > 0) || (data.strokes && data.strokes.length > 0) || (data.comments && data.comments.length > 0);
+          
+          if (!hasServerData && (nodesRef.current.length > 0 || edgesRef.current.length > 0 || strokesRef.current.length > 0 || commentsRef.current.length > 0)) {
+            // Seed server room with client board contents
+            fetch(`/api/collab/${roomCode}/update`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                nodes: nodesRef.current,
+                edges: edgesRef.current,
+                strokes: strokesRef.current,
+                comments: commentsRef.current,
+              }),
+            }).catch(() => {});
           } else {
-            setNodes(nextSrv);
+            const currEditId = editingNodeIdRef.current;
+            if (currEditId) {
+              const merged = nextSrv.map((sn: OSINTNode) => {
+                if (sn.id === currEditId) {
+                  const currentLocal = nodesRef.current.find(n => n.id === currEditId);
+                  return currentLocal || sn;
+                }
+                return sn;
+              });
+              setNodes(merged);
+            } else {
+              setNodes(nextSrv);
+            }
+            setEdges(data.edges || []);
+            setStrokes(data.strokes || []);
+            setComments(data.comments || []);
           }
-          setEdges(data.edges || []);
-          setStrokes(data.strokes || []);
-          setComments(data.comments || []);
         } else if (data.type === 'update') {
           const nextSrv = data.nodes || [];
           const currEditId = editingNodeIdRef.current;
@@ -580,6 +642,16 @@ export default function App() {
 
     setRoomId(roomCode);
     setShowCollabModal(false);
+
+    if (currentBoardId) {
+      setBoards((prevBoards) => {
+        const updated = prevBoards.map((b) =>
+          b.id === currentBoardId ? { ...b, isCollab: true, roomId: roomCode } : b
+        );
+        localStorage.setItem(`whiteboard_boards_${currentUsername}`, JSON.stringify(updated));
+        return updated;
+      });
+    }
   };
 
   const handleDisconnectCollab = () => {
@@ -589,6 +661,24 @@ export default function App() {
     }
     setRoomId(null);
     setPeerCursors([]);
+  };
+
+  const handleCopyInviteLink = () => {
+    if (!roomId) return;
+    const activeBoard = boards.find(b => b.id === currentBoardId);
+    const bName = activeBoard ? activeBoard.name : 'Расследование';
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${roomId}&name=${encodeURIComponent(bName)}`;
+    
+    try {
+      navigator.clipboard.writeText(inviteUrl).then(() => {
+        setCopiedInvite(true);
+        setTimeout(() => setCopiedInvite(false), 2000);
+      }).catch((err) => {
+        console.error('navigator.clipboard error', err);
+      });
+    } catch (e) {
+      console.error('Clipboard copy fail', e);
+    }
   };
 
   const pushCollabUpdate = async (
@@ -638,6 +728,8 @@ export default function App() {
         color: penColor,
         x,
         y,
+        avatarUrl: currentUserAvatarUrl,
+        avatarColor: currentUserAvatarColor,
       }),
     }).catch(() => {});
   };
@@ -998,6 +1090,12 @@ ${formattedLines}
       setSelectedStrokeIds([]);
       setSelectedEdgeId(null);
       setHistory([]);
+      
+      if (target.isCollab && target.roomId) {
+        connectToCollaboration(target.roomId);
+      } else {
+        handleDisconnectCollab();
+      }
       pushCollabUpdate(target.nodes, target.edges, target.strokes, target.comments);
     }
   };
@@ -1294,10 +1392,28 @@ ${formattedLines}
             </span>
           </div>
 
-          <div className="flex items-center space-x-4">
-            <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
-              Аналитик: <strong className="text-zinc-200">{currentUsername}</strong>
-            </span>
+          <div className="flex items-center space-x-3.5">
+            <button
+              onClick={() => {
+                setTempAvatarUrl(currentUserAvatarUrl);
+                setTempAvatarColor(currentUserAvatarColor);
+                setShowProfileModal(true);
+              }}
+              className="flex items-center space-x-1.5 p-1 bg-zinc-900 border border-zinc-850 hover:border-zinc-750 hover:text-white rounded-lg cursor-pointer transition-all pr-2.5"
+              title="Редактировать профиль аналитика"
+            >
+              <div
+                className="w-5.5 h-5.5 rounded-full flex items-center justify-center font-mono text-[9px] text-white font-bold shrink-0 overflow-hidden"
+                style={{ backgroundColor: currentUserAvatarColor }}
+              >
+                {currentUserAvatarUrl ? (
+                  <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-zinc-300 font-bold uppercase">{currentUsername}</span>
+            </button>
             <div className="w-px h-4.5 bg-zinc-850" />
             <button
               onClick={handleLogout}
@@ -1401,9 +1517,17 @@ ${formattedLines}
                             }}
                           />
                         ) : (
-                          <h3 className="font-mono text-xs font-bold text-white uppercase tracking-tight group-hover:text-indigo-400 transition-colors">
-                            {b.name}
-                          </h3>
+                          <div className="flex items-center space-x-2 min-w-0 flex-1">
+                            <h3 className="font-mono text-xs font-bold text-white uppercase tracking-tight group-hover:text-indigo-400 transition-colors truncate">
+                              {b.name}
+                            </h3>
+                            {b.isCollab && (
+                              <span className="text-[8.5px] items-center shrink-0 font-mono font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-900/50 px-1.5 py-0.5 rounded flex tracking-wider uppercase" title={`Комната: ${b.roomId}`}>
+                                <span className="w-1 h-1 rounded-full bg-emerald-400 animate-pulse mr-1" />
+                                🔐 КООП
+                              </span>
+                            )}
+                          </div>
                         )}
 
                         <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1464,6 +1588,181 @@ ${formattedLines}
             </div>
           )}
         </main>
+
+        {/* ── PROFILE CUSTOMIZATION & AVATAR EDITOR MODAL ── */}
+        {showProfileModal && (
+          <div className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl p-6 relative animate-fade-in space-y-5 animate-scale-up">
+              <button
+                onClick={() => setShowProfileModal(false)}
+                className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="text-left">
+                <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-2">
+                  <span>👤</span>
+                  <span>Редактирование профиля</span>
+                </h3>
+                <p className="text-[11px] text-zinc-500 mt-1 leading-normal font-sans">
+                  Настройте свой визуальный аватар и цветовой позывной для совместной OSINT-деятельности.
+                </p>
+              </div>
+
+              {/* AVATAR LIVE PREVIEW */}
+              <div className="flex flex-col items-center justify-center p-4.5 bg-zinc-900/40 border border-zinc-900/60 rounded-lg space-y-2">
+                <div
+                  className="w-16 h-16 rounded-full border border-zinc-800 shadow-inner flex items-center justify-center font-mono text-xl font-black text-white overflow-hidden relative"
+                  style={{ backgroundColor: tempAvatarColor }}
+                >
+                  {tempAvatarUrl ? (
+                    <img src={tempAvatarUrl} alt="Avatar Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
+                  )}
+                </div>
+                <span className="text-xs font-mono font-bold text-zinc-300 uppercase">{currentUsername}</span>
+              </div>
+
+              {/* COLOR PRESETS */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold">
+                  Цвет позывного (Color Accent)
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#6366f1', '#e11d48'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setTempAvatarColor(c)}
+                      className="w-6 h-6 rounded-full border border-black/50 hover:scale-110 cursor-pointer transition-transform relative flex items-center justify-center shrink-0"
+                      style={{ backgroundColor: c }}
+                    >
+                      {tempAvatarColor === c && (
+                        <Check className="w-3.5 h-3.5 text-white stroke-[3.5px] drop-shadow" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* PRESET AVATARS */}
+              <div className="space-y-1.5 text-left">
+                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold">
+                  Стиль аватара (Cyber Presets)
+                </label>
+                <div className="grid grid-cols-6 gap-2">
+                  {[
+                    'https://api.dicebear.com/7.x/bottts/svg?seed=Hacker3',
+                    'https://api.dicebear.com/7.x/bottts/svg?seed=CyberGhost',
+                    'https://api.dicebear.com/7.x/bottts/svg?seed=ShadowOp',
+                    'https://api.dicebear.com/7.x/bottts/svg?seed=Mainframe',
+                    'https://api.dicebear.com/7.x/identicon/svg?seed=AgentZ',
+                    'https://api.dicebear.com/7.x/pixel-art/svg?seed=WhiteRose'
+                  ].map((pUrl, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setTempAvatarUrl(pUrl)}
+                      className={`w-10 h-10 rounded border overflow-hidden cursor-pointer transition-all ${
+                        tempAvatarUrl === pUrl ? 'border-indigo-500 ring-2 ring-indigo-550/40' : 'border-zinc-850 hover:border-zinc-750'
+                      }`}
+                    >
+                      <img src={pUrl} alt="" className="w-full h-full object-cover bg-zinc-900" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* FILE UPLOAD & URL FORM */}
+              <div className="space-y-3 pt-1 text-left">
+                <div>
+                  <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
+                    Загрузить картинку с компьютера
+                  </label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id="profile-avatar-file-dash"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            if (typeof reader.result === 'string') {
+                              setTempAvatarUrl(reader.result);
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                    <label
+                      htmlFor="profile-avatar-file-dash"
+                      className="flex-1 bg-zinc-900 hover:bg-zinc-850 border border-zinc-850 text-zinc-300 text-[10px] font-mono font-bold uppercase py-2 px-3.5 rounded text-center cursor-pointer transition-colors"
+                    >
+                      Выбрать файл изображения...
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
+                    Или укажите прямую ссылку (Image URL)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="https://example.com/my-photo.png"
+                    className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 text-zinc-100 px-3 py-1.5 rounded focus:border-zinc-500 outline-none transition-colors"
+                    value={tempAvatarUrl.startsWith('data:') ? '' : tempAvatarUrl}
+                    onChange={(e) => setTempAvatarUrl(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* ACTION FOOTER */}
+              <div className="flex space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="flex-1 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded border border-zinc-850 cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const success = await handleUpdateProfile(tempAvatarUrl, tempAvatarColor);
+                    if (success) {
+                      setShowProfileModal(false);
+                      setToastNotification({
+                        message: 'Профиль аналитика успешно обновлен!',
+                        type: 'success'
+                      });
+                      setTimeout(() => setToastNotification(null), 3000);
+                    } else {
+                      alert('Не удалось сохранить изменения профиля.');
+                    }
+                  }}
+                  className="flex-1 bg-white text-black hover:bg-zinc-200 py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded cursor-pointer"
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Floating self-fading notification toast */}
+        {toastNotification && (
+          <div className="fixed bottom-6 right-6 z-[9999] bg-zinc-950/90 border border-zinc-800 text-white px-5 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center space-x-3.5 animate-bounce font-sans text-xs max-w-sm">
+            <div className={`w-2 h-2 rounded-full shrink-0 ${toastNotification.type === 'success' ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400'}`} />
+            <p className="font-mono text-zinc-105">{toastNotification.message}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -1516,10 +1815,58 @@ ${formattedLines}
           {roomId ? (
             <div className="flex items-center space-x-1.5 bg-emerald-950/20 border border-emerald-900/40 px-2.5 py-1 rounded">
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="font-mono text-[9px] text-emerald-300 font-bold uppercase">КООПЕРАЦИЯ: {roomId}</span>
+              <span className="font-mono text-[9px] text-emerald-300 font-bold uppercase mr-1">КООПЕРАЦИЯ: {roomId}</span>
+              
+              {/* Overlapping active participant avatars */}
+              <div className="flex -space-x-1.5 items-center mr-2 pl-2 border-l border-emerald-900/40 overflow-visible shrink-0">
+                {/* 1. Self */}
+                <div
+                  className="w-5 h-5 rounded-full border border-zinc-950 flex items-center justify-center font-mono text-[8px] text-white font-black shrink-0 overflow-hidden relative"
+                  style={{ backgroundColor: currentUserAvatarColor }}
+                  title={`${currentUsername} (Вы)`}
+                >
+                  {currentUserAvatarUrl ? (
+                    <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'ME'
+                  )}
+                </div>
+
+                {/* 2. Connected peers */}
+                {peerCursors
+                  .filter((p) => Date.now() - p.lastActive <= 15000 && p.username !== currentUsername)
+                  .map((peer, pIdx) => (
+                    <div
+                      key={peer.username + pIdx}
+                      className="w-5 h-5 rounded-full border border-zinc-950 flex items-center justify-center font-mono text-[8px] text-white font-black shrink-0 overflow-hidden relative"
+                      style={{ backgroundColor: peer.avatarColor || '#64748b' }}
+                      title={`${peer.username}`}
+                    >
+                      {peer.avatarUrl ? (
+                        <img src={peer.avatarUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        peer.username ? peer.username.slice(0, 2).toUpperCase() : 'OP'
+                      )}
+                    </div>
+                  ))}
+              </div>
+
+              <span className="text-zinc-750 font-mono text-[9px] px-0.5 pointer-events-none">|</span>
+
+              <button
+                onClick={handleCopyInviteLink}
+                className="text-[9px] font-mono text-emerald-400 hover:text-emerald-300 font-bold ml-1.5 flex items-center space-x-1 cursor-pointer hover:underline"
+                title="Скопировать пригласительную ссылку для коллаборации"
+              >
+                <Link2 className="w-3 h-3 text-emerald-400" />
+                <span>{copiedInvite ? 'Скопировано!' : 'Пригласить'}</span>
+              </button>
+
+              <span className="text-zinc-750 font-mono text-[9px] px-1 pointer-events-none">|</span>
+
               <button
                 onClick={handleDisconnectCollab}
-                className="text-[9px] font-mono text-zinc-400 hover:text-white font-bold ml-1.5 cursor-pointer hover:underline"
+                className="text-[9px] font-mono text-zinc-400 hover:text-white font-bold cursor-pointer hover:underline"
               >
                 Выйти
               </button>
@@ -1557,8 +1904,30 @@ ${formattedLines}
           </button>
 
           <button
+            onClick={() => {
+              setTempAvatarUrl(currentUserAvatarUrl);
+              setTempAvatarColor(currentUserAvatarColor);
+              setShowProfileModal(true);
+            }}
+            className="flex items-center space-x-1.5 p-1 bg-zinc-900 border border-zinc-850 hover:border-zinc-700 rounded-lg cursor-pointer transition-colors"
+            title="Редактировать профиль аналитика"
+          >
+            <div
+              className="w-5.5 h-5.5 rounded-full flex items-center justify-center font-mono text-[9px] text-white font-bold shrink-0 overflow-hidden"
+              style={{ backgroundColor: currentUserAvatarColor }}
+            >
+              {currentUserAvatarUrl ? (
+                <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : (
+                currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
+              )}
+            </div>
+            <span className="text-[10px] font-mono text-zinc-300 font-bold uppercase pr-1.5 max-w-[80px] truncate md:inline hidden">{currentUsername}</span>
+          </button>
+
+          <button
             onClick={handleLogout}
-            className="p-1 px-2.5 bg-zinc-900 hover:bg-red-955/20 text-zinc-500 hover:text-red-400 rounded cursor-pointer border border-zinc-850"
+            className="p-1 px-2.5 bg-zinc-900 hover:bg-red-955/20 text-zinc-500 hover:text-red-400 rounded cursor-pointer border border-zinc-850 flex items-center justify-center"
             title={`Выйти из аналитика: ${currentUsername}`}
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -1659,6 +2028,9 @@ ${formattedLines}
             editingNodeId={editingNodeId}
             onSetEditingNodeId={setEditingNodeId}
             onChangeActiveTool={setActiveTool}
+            selectedCommentId={selectedCommentId}
+            onSelectComment={setSelectedCommentId}
+            onDeleteComment={handleDeleteComment}
           />
 
           {/* Quick Stats monitor panel - scale only */}
@@ -1748,204 +2120,270 @@ ${formattedLines}
         )}
       </div>
 
-      {/* ── COLLABORATION JOIN & SMTP REPORT GATEWAY MODAL */}
+      {/* ── COLLABORATION JOIN & MULTIPLAYER CONTROLS MODAL ── */}
       {showCollabModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl overflow-hidden relative flex flex-col md:flex-row animate-fade-in divide-y md:divide-y-0 md:divide-x divide-zinc-900">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl p-6 relative flex flex-col space-y-4">
             
-            {/* LEFT MODULE: MULTIPLAYER WORKSPACE STREAM */}
-            <div className="w-full md:w-1/2 p-6 flex flex-col justify-between space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>Мультиплеер и Связь</span>
-                  </h3>
-                  <button
-                    onClick={() => setShowCollabModal(false)}
-                    className="text-zinc-500 hover:text-zinc-300 font-bold cursor-pointer md:hidden"
+            <button
+              onClick={() => setShowCollabModal(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <X className="w-4.5 h-4.5" />
+            </button>
+
+            <div className="space-y-1 text-left">
+              <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Мультиплеер и Связь</span>
+              </h3>
+              <p className="text-[11px] text-zinc-400 leading-relaxed font-sans select-none">
+                Синхронизируйте рисование, геометрические узлы, умозаключения и курсоры мыши других специалистов в режиме реального времени!
+              </p>
+            </div>
+
+            <div className="space-y-3.5 pt-1 text-left">
+              <div>
+                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
+                  Аналитик (Позывной)
+                </label>
+                <div className="flex items-center space-x-2">
+                  <div
+                    className="w-5.5 h-5.5 rounded-full flex items-center justify-center font-mono text-[9px] text-white font-bold shrink-0 overflow-hidden"
+                    style={{ backgroundColor: currentUserAvatarColor }}
                   >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <p className="text-[11px] text-zinc-400 leading-relaxed font-sans select-none">
-                  Синхронизируйте рисование, геометрические узлы, комментарии команды и мышиные курсоры других аналитиков в режиме реального времени!
-                </p>
-
-                <div className="space-y-3.5 pt-1">
-                  <div>
-                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
-                      Имя аналитика (Позывной)
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      className="w-full text-xs font-mono bg-zinc-900/60 border border-zinc-850 text-zinc-400 px-3 py-2 rounded outline-none cursor-not-allowed select-none"
-                      value={currentUsername || 'Inspector_Demo'}
-                    />
+                    {currentUserAvatarUrl ? (
+                      <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      currentUsername ? currentUsername.slice(0, 2) : 'A'
+                    )}
                   </div>
-
-                  <div>
-                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
-                      Идентификатор Комнаты (Room ID)
-                    </label>
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        className="flex-1 text-xs font-mono bg-zinc-900 border border-zinc-850 text-white font-bold px-3 py-2 rounded outline-none placeholder-zinc-800 focus:border-zinc-500 transition-colors"
-                        placeholder="E.g., MY_ROOM_CODE"
-                        value={roomId || ''}
-                        onChange={(e) => setRoomId(e.target.value.toUpperCase())}
-                      />
-                      <button
-                        onClick={() => {
-                          const code = 'OSINT-' + Math.floor(Math.random() * 90000 + 10000);
-                          setRoomId(code);
-                        }}
-                        className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[10px] uppercase font-mono px-3.5 rounded font-bold cursor-pointer transition-colors border border-zinc-850"
-                      >
-                        Код
-                      </button>
-                    </div>
-                  </div>
+                  <input
+                    type="text"
+                    disabled
+                    className="flex-1 text-xs font-mono bg-zinc-900/60 border border-zinc-850 text-zinc-400 px-3 py-2 rounded outline-none cursor-not-allowed select-none"
+                    value={currentUsername || 'Inspector_Demo'}
+                  />
                 </div>
               </div>
 
-              <div className="flex space-x-2.5 pt-4">
-                <button
-                  onClick={() => setShowCollabModal(false)}
-                  className="flex-1 bg-zinc-900 border border-zinc-850 hover:bg-zinc-850 text-zinc-400 py-2 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer transition-colors"
-                >
-                  Отмена
-                </button>
-                <button
-                  disabled={!roomId}
-                  onClick={() => connectToCollaboration(roomId!)}
-                  className="flex-1 bg-white text-black hover:bg-zinc-200 py-2 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Подключить
-                </button>
+              <div>
+                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
+                  Идентификатор Комнаты (Room ID)
+                </label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    className="flex-1 text-xs font-mono bg-zinc-900 border border-zinc-850 text-white font-bold px-3 py-2 rounded outline-none placeholder-zinc-800 focus:border-zinc-500 transition-colors"
+                    placeholder="E.g., MY_ROOM_CODE"
+                    value={roomId || ''}
+                    onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+                  />
+                  <button
+                    onClick={() => {
+                      const code = 'OSINT-' + Math.floor(Math.random() * 90000 + 10000);
+                      setRoomId(code);
+                    }}
+                    className="bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[10px] uppercase font-mono px-3.5 rounded font-bold cursor-pointer transition-colors border border-zinc-850"
+                  >
+                    Генерация
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* RIGHT MODULE: SMTP SPECIALIZED OUTBOUND (noreply@whiteboard.com) */}
-            <div className="w-full md:w-1/2 p-6 flex flex-col justify-between space-y-4 bg-zinc-950/40">
-              <div className="space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-1.5">
-                    <Mail className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Почтовый Шлюз (SMTP)</span>
-                  </h3>
+            <div className="flex space-x-2.5 pt-3">
+              <button
+                onClick={() => setShowCollabModal(false)}
+                className="flex-1 bg-zinc-900 border border-zinc-850 hover:bg-zinc-850 text-zinc-400 py-2.5 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                disabled={!roomId}
+                onClick={() => connectToCollaboration(roomId!)}
+                className="flex-1 bg-white text-black hover:bg-zinc-200 py-2.5 text-[10px] uppercase font-mono tracking-wider rounded font-bold cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Подключить
+              </button>
+            </div>
+            
+          </div>
+        </div>
+      )}
+
+      {/* ── PROFILE CUSTOMIZATION & AVATAR EDITOR MODAL ── */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl p-6 relative animate-fade-in space-y-5">
+            <button
+              onClick={() => setShowProfileModal(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-left">
+              <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-2">
+                <span>👤</span>
+                <span>Редактирование профиля</span>
+              </h3>
+              <p className="text-[11px] text-zinc-500 mt-1 leading-normal font-sans">
+                Настройте свой визуальный аватар и цветовой позывной для совместной OSINT-деятельности.
+              </p>
+            </div>
+
+            {/* AVATAR LIVE PREVIEW */}
+            <div className="flex flex-col items-center justify-center p-4.5 bg-zinc-900/40 border border-zinc-900/60 rounded-lg space-y-2">
+              <div
+                className="w-16 h-16 rounded-full border border-zinc-800 shadow-inner flex items-center justify-center font-mono text-xl font-black text-white overflow-hidden relative"
+                style={{ backgroundColor: tempAvatarColor }}
+              >
+                {tempAvatarUrl ? (
+                  <img src={tempAvatarUrl} alt="Avatar Preview" className="w-full h-full object-cover" />
+                ) : (
+                  currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
+                )}
+              </div>
+              <span className="text-xs font-mono font-bold text-zinc-300 uppercase">{currentUsername}</span>
+            </div>
+
+            {/* COLOR PRESETS */}
+            <div className="space-y-1.5 text-left">
+              <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold">
+                Цвет позывного (Color Accent)
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#6366f1', '#e11d48'].map((c) => (
                   <button
-                    onClick={() => setShowCollabModal(false)}
-                    className="text-zinc-500 hover:text-zinc-300 font-bold cursor-pointer hidden md:block"
+                    key={c}
+                    type="button"
+                    onClick={() => setTempAvatarColor(c)}
+                    className="w-6 h-6 rounded-full border border-black/50 hover:scale-110 cursor-pointer transition-transform relative flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: c }}
                   >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="p-2.5 bg-zinc-900/30 border border-zinc-900 rounded flex items-center justify-between mb-1">
-                  <div className="text-left font-mono">
-                    <span className="block text-[8px] uppercase text-zinc-550 font-bold">Сертификат Отправителя</span>
-                    <span className="text-[11px] text-white font-bold leading-non">noreply@whiteboard.com</span>
-                  </div>
-                  <span className="text-[8px] bg-emerald-950/60 text-emerald-400 px-1.5 py-0.5 rounded font-mono font-bold border border-emerald-900/40 uppercase">SMTP Secure</span>
-                </div>
-
-                <form onSubmit={handleSendMail} className="space-y-2.5 text-left">
-                  <div>
-                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
-                      Адрес Получателя / Analyst Email
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="analyst-colleague@agency.com"
-                      className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 px-3 py-1.5 rounded text-white outline-none focus:border-zinc-500 transition-colors"
-                      value={mailTo}
-                      onChange={(e) => setMailTo(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
-                      Тема Сообщения
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Тема"
-                      className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 px-3 py-1.5 rounded text-zinc-300 outline-none focus:border-zinc-500 transition-colors"
-                      value={mailSubject}
-                      onChange={(e) => setMailSubject(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold mb-1">
-                      Тело Сообщения / Сводка
-                    </label>
-                    <textarea
-                      required
-                      rows={3}
-                      className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 px-3 py-1.5 rounded text-zinc-300 outline-none focus:border-zinc-500 transition-colors resize-none leading-relaxed"
-                      value={mailBody}
-                      onChange={(e) => setMailBody(e.target.value)}
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={sendingMail || !mailTo}
-                    className="w-full bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-white py-1.5 rounded text-[10px] font-mono uppercase font-bold tracking-widest flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
-                  >
-                    {sendingMail ? (
-                      <span>Отправка пакетов...</span>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Отправить отчет от noreply</span>
-                      </>
+                    {tempAvatarColor === c && (
+                      <Check className="w-3.5 h-3.5 text-white stroke-[3.5px] drop-shadow" />
                     )}
                   </button>
-                </form>
-              </div>
-
-              {/* OUTBOUND SMTP TRACE CONSOLE */}
-              <div className="flex-1 flex flex-col min-h-0 space-y-1 pt-1.5 text-left border-t border-zinc-900/60">
-                <span className="font-mono text-[8px] uppercase tracking-wider text-zinc-500 font-bold">Служебный Лог Почтового Шлюза (Live Outboxes):</span>
-                <div className="bg-black/60 border border-zinc-900 rounded p-2.5 font-mono text-[9px] text-zinc-400 overflow-y-auto max-h-32 select-text whitespace-pre-wrap leading-normal space-y-2">
-                  {mailLogs.length === 0 ? (
-                    <div className="text-zinc-650 text-center py-4">Очередь SMTP пуста. Отправьте письмо выше для симуляции транзакции.</div>
-                  ) : (
-                    mailLogs.slice(0, 3).map((log, index) => (
-                      <div key={log.id || index} className="border-b border-zinc-900/60 pb-1.5 mb-1.5 last:border-0 last:pb-0 last:mb-0">
-                        <div className="flex items-center justify-between text-[7px] text-zinc-550 border-b border-zinc-900/40 pb-0.5 mb-1">
-                          <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
-                          <span className="text-emerald-400 font-bold">{log.status}</span>
-                        </div>
-                        <div className="text-zinc-300"><span className="text-zinc-500">Кому:</span> {log.to}</div>
-                        <div className="text-zinc-300 truncate"><span className="text-zinc-500">Тема:</span> {log.subject}</div>
-                        
-                        <details className="mt-1">
-                          <summary className="text-[7.5px] text-zinc-500 hover:text-zinc-300 cursor-pointer select-none">Посмотреть SMTP Трейс (Handshake)...</summary>
-                          <div className="bg-black text-[8px] text-amber-500/80 p-1.5 mt-1 rounded border border-zinc-900/80 space-y-0.5 select-text leading-relaxed">
-                            {log.trace.map((line: string, lIdx: number) => (
-                              <div key={lIdx} className={line.startsWith('2') || line.startsWith('3') ? 'text-emerald-500/80' : 'text-zinc-500'}>
-                                {line}
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      </div>
-                    ))
-                  )}
-                </div>
+                ))}
               </div>
             </div>
 
+            {/* PRESET AVATARS */}
+            <div className="space-y-1.5 text-left">
+              <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold">
+                Стиль аватара (Cyber Presets)
+              </label>
+              <div className="grid grid-cols-6 gap-2">
+                {[
+                  'https://api.dicebear.com/7.x/bottts/svg?seed=Hacker3',
+                  'https://api.dicebear.com/7.x/bottts/svg?seed=CyberGhost',
+                  'https://api.dicebear.com/7.x/bottts/svg?seed=ShadowOp',
+                  'https://api.dicebear.com/7.x/bottts/svg?seed=Mainframe',
+                  'https://api.dicebear.com/7.x/identicon/svg?seed=AgentZ',
+                  'https://api.dicebear.com/7.x/pixel-art/svg?seed=WhiteRose'
+                ].map((pUrl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setTempAvatarUrl(pUrl)}
+                    className={`w-10 h-10 rounded border overflow-hidden cursor-pointer transition-all ${
+                      tempAvatarUrl === pUrl ? 'border-indigo-500 ring-2 ring-indigo-550/40' : 'border-zinc-850 hover:border-zinc-750'
+                    }`}
+                  >
+                    <img src={pUrl} alt="" className="w-full h-full object-cover bg-zinc-900" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* FILE UPLOAD & URL FORM */}
+            <div className="space-y-3 pt-1 text-left">
+              <div>
+                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
+                  Загрузить картинку с компьютера
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    id="profile-avatar-file"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          if (typeof reader.result === 'string') {
+                            setTempAvatarUrl(reader.result);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="profile-avatar-file"
+                    className="flex-1 bg-zinc-900 hover:bg-zinc-850 border border-zinc-850 text-zinc-300 text-[10px] font-mono font-bold uppercase py-2 px-3.5 rounded text-center cursor-pointer transition-colors"
+                  >
+                    Выбрать файл изображения...
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold mb-1">
+                  Или укажите прямую ссылку (Image URL)
+                </label>
+                <input
+                  type="text"
+                  placeholder="https://example.com/my-photo.png"
+                  className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 text-zinc-100 px-3 py-1.5 rounded focus:border-zinc-500 outline-none transition-colors"
+                  value={tempAvatarUrl.startsWith('data:') ? '' : tempAvatarUrl}
+                  onChange={(e) => setTempAvatarUrl(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* ACTION FOOTER */}
+            <div className="flex space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="flex-1 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded border border-zinc-850 cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const success = await handleUpdateProfile(tempAvatarUrl, tempAvatarColor);
+                  if (success) {
+                    setShowProfileModal(false);
+                    setToastNotification({
+                      message: 'Профиль аналитика успешно обновлен!',
+                      type: 'success'
+                    });
+                    setTimeout(() => setToastNotification(null), 3000);
+                  } else {
+                    alert('Не удалось сохранить изменения профиля.');
+                  }
+                }}
+                className="flex-1 bg-white text-black hover:bg-zinc-200 py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded cursor-pointer"
+              >
+                Сохранить
+              </button>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating self-fading notification toast */}
+      {toastNotification && (
+        <div className="fixed bottom-6 right-6 z-[9999] bg-zinc-950/90 border border-zinc-800 text-white px-5 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center space-x-3.5 animate-bounce font-sans text-xs max-w-sm">
+          <div className={`w-2 h-2 rounded-full shrink-0 ${toastNotification.type === 'success' ? 'bg-emerald-400 animate-pulse' : 'bg-blue-400'}`} />
+          <p className="font-mono text-zinc-105">{toastNotification.message}</p>
         </div>
       )}
     </div>

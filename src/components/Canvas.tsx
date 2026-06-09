@@ -132,6 +132,9 @@ interface CanvasProps {
   editingNodeId: string | null;
   onSetEditingNodeId: (id: string | null) => void;
   onChangeActiveTool?: (tool: 'select' | 'connect' | 'text' | 'hand' | 'pencil' | 'map') => void;
+  selectedCommentId?: string | null;
+  onSelectComment?: (id: string | null) => void;
+  onDeleteComment?: (id: string) => void;
 }
 
 export default function Canvas({
@@ -168,6 +171,9 @@ export default function Canvas({
   editingNodeId,
   onSetEditingNodeId,
   onChangeActiveTool,
+  selectedCommentId = null,
+  onSelectComment,
+  onDeleteComment,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
@@ -781,11 +787,12 @@ export default function Canvas({
 
     // Deselect if we click on background elements
     const target = e.target as HTMLElement;
-    if (target.closest('.node-card') || target.closest('.no-deselect') || target.closest('path')) return;
+    if (target.closest('.node-card') || target.closest('.no-deselect') || target.closest('.comment-card') || target.closest('path')) return;
 
     onSelectNodes([]);
     onSelectStrokes([]);
     onSelectEdge(null);
+    if (onSelectComment) onSelectComment(null);
 
     if (activeTool === 'select') {
       setIsSelectingMarquee(true);
@@ -2433,6 +2440,7 @@ export default function Canvas({
           {/* ── PLIPPED PIN PROTOCOL COOPERATIVE COMMENTS */}
           {comments && comments.map((cmt) => {
             if (cmt.x === undefined || cmt.y === undefined) return null;
+            const isSelected = selectedCommentId === cmt.id;
             return (
               <div
                 key={cmt.id}
@@ -2440,13 +2448,36 @@ export default function Canvas({
                   left: `${cmt.x}px`,
                   top: `${cmt.y}px`,
                 }}
-                className="absolute p-3 bg-yellow-500/10 border border-yellow-500/30 text-yellow-100 rounded-lg shadow-lg backdrop-blur-md max-w-[210px] pointer-events-auto select-none"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectNodes([]);
+                  onSelectStrokes([]);
+                  onSelectEdge(null);
+                  if (onSelectComment) onSelectComment(cmt.id);
+                }}
+                className={`absolute p-3 rounded-lg shadow-lg backdrop-blur-md max-w-[210px] pointer-events-auto select-none transition-all cursor-pointer comment-card ${
+                  isSelected
+                    ? 'bg-yellow-500/25 border-yellow-400 ring-2 ring-yellow-400/50 text-white translate-y-[-2px]'
+                    : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-100 hover:border-yellow-500/50'
+                }`}
               >
                 <div className="flex items-center justify-between mb-1.5 border-b border-yellow-500/20 pb-1">
-                  <span className="font-mono text-[9px] uppercase tracking-wider text-yellow-400 font-bold">
+                  <span className="font-mono text-[9px] uppercase tracking-wider text-yellow-400 font-bold truncate max-w-[100px]" title={cmt.author}>
                     {cmt.author}
                   </span>
-                  <span className="font-mono text-[8px] text-yellow-500/50">{cmt.timestamp}</span>
+                  <div className="flex items-center space-x-1.5 shrink-0">
+                    <span className="font-mono text-[8.5px] text-yellow-500/60">{cmt.timestamp}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onDeleteComment) onDeleteComment(cmt.id);
+                      }}
+                      className="text-yellow-500 hover:text-red-400 cursor-pointer p-0.5 rounded transition-colors"
+                      title="Удалить комментарий"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
                 <p className="text-xs text-yellow-50/90 whitespace-pre-wrap leading-relaxed font-sans select-text">
                   {cmt.text}
@@ -2477,10 +2508,20 @@ export default function Canvas({
                 />
               </svg>
               <span
-                style={{ backgroundColor: peer.color }}
-                className="absolute shadow px-2 py-0.5 text-[8.5px] font-mono font-bold rounded-full top-4 left-4 text-black animate-fade-in"
+                style={{ backgroundColor: peer.color || '#3b82f6' }}
+                className="absolute shadow pl-1 pr-2 py-0.5 text-[8px] font-mono font-bold rounded-full top-4 left-4 text-zinc-950 leading-none animate-fade-in flex items-center space-x-1 border border-zinc-950"
               >
-                {peer.name}
+                {peer.avatarUrl ? (
+                  <img src={peer.avatarUrl} alt="" className="w-3.5 h-3.5 rounded-full object-cover shrink-0 select-none pointer-events-none bg-zinc-800" />
+                ) : (
+                  <div
+                    className="w-3.5 h-3.5 rounded-full shrink-0 flex items-center justify-center font-bold text-[7px] text-zinc-950 bg-white"
+                    style={{ backgroundColor: peer.avatarColor }}
+                  >
+                    {peer.name ? peer.name.slice(0, 1).toUpperCase() : '?'}
+                  </div>
+                )}
+                <span className="font-mono text-[8px] tracking-wider uppercase font-extrabold text-[#09090b]">{peer.name}</span>
               </span>
             </div>
           );

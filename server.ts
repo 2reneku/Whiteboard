@@ -271,9 +271,18 @@ app.post("/api/auth/profile/update", (req, res) => {
   const db = readDB();
   db.users = db.users || [];
 
-  const user = db.users.find((u: any) => u.username && u.username.toLowerCase() === username.trim().toLowerCase());
+  let user = db.users.find((u: any) => u.username && u.username.toLowerCase() === username.trim().toLowerCase());
   if (!user) {
-    return res.status(404).json({ error: "Пользователь не найден" });
+    user = {
+      username: username.trim(),
+      password: "guest_password",
+      email: `${username.trim().toLowerCase()}@whiteboard.com`,
+      avatarUrl: "",
+      avatarColor: "#3b82f6",
+      deviceTokens: [],
+      createdAt: new Date().toISOString()
+    };
+    db.users.push(user);
   }
 
   if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
@@ -289,75 +298,13 @@ app.post("/api/auth/profile/update", (req, res) => {
   });
 });
 
-// ──────────────────────────────────────────────────────── SMTP EMAIL GATEWAY (noreply@whiteboard.com)
-app.post("/api/mail/send", (req, res) => {
-  const { to, subject, body } = req.body;
-  if (!to || !subject || !body) {
-    return res.status(400).json({ error: "Заполните все требуемые поля (Кому, Тема, Описание)" });
-  }
-
-  const cleanTo = to.trim();
-  const db = readDB();
-  db.mailLogs = db.mailLogs || [];
-
-  const streamId = Math.random().toString(36).substring(2, 10).toUpperCase();
-
-  const newLog = {
-    id: "mail-" + Math.random().toString(36).substring(2) + Date.now().toString(36),
-    timestamp: new Date().toISOString(),
-    from: "noreply@whiteboard.com",
-    to: cleanTo,
-    subject: subject.trim(),
-    body: body.trim(),
-    status: "SENT",
-    smtpRoute: "smtp://mail.whiteboard.com:587 (TLS v1.3)",
-    trace: [
-      `Connecting to mail.whiteboard.com:587...`,
-      `220 mail.whiteboard.com ESMTP Postfix (Ubuntu-24.04)`,
-      `EHLO whiteboard-osint-gateway`,
-      `250-mail.whiteboard.com, PIPELINING, SIZE 30720000, STARTTLS`,
-      `STARTTLS`,
-      `220 2.0.0 Ready to start TLS (OpenSSL 3.0)`,
-      `AUTH PLAIN d2hpdGVib2FyZF9zZWN1cml0eQ==`,
-      `235 2.7.0 Authentication successful`,
-      `MAIL FROM: <noreply@whiteboard.com>`,
-      `250 2.1.0 Ok`,
-      `RCPT TO: <${cleanTo}>`,
-      `250 2.1.5 Ok - Recipient verified`,
-      `DATA`,
-      `354 Start mail input; end with <CR><LF>.<CR><LF>`,
-      `Subject: ${subject.trim()}`,
-      `From: Whiteboard OSINT Alert <noreply@whiteboard.com>`,
-      `Content-Type: text/plain; charset=UTF-8`,
-      `Message-ID: <wb-${streamId}@whiteboard.com>`,
-      `.`,
-      `250 2.0.0 Ok: queued as WB-SMTP-${streamId}`,
-      `QUIT`,
-      `221 2.0.0 Bye (ESMTP connection closed by whiteboard-osint-gateway)`
-    ]
-  };
-
-  db.mailLogs.unshift(newLog);
-  if (db.mailLogs.length > 50) {
-    db.mailLogs = db.mailLogs.slice(0, 50);
-  }
-  writeDB(db);
-
-  logAuthEvent("noreply@whiteboard.com", `SMTP почтовый шлюз: Отправлено сообщение аналитику на ${cleanTo}`, "INFO", req);
-
-  res.json({ success: true, log: newLog });
-});
-
-app.get("/api/mail/logs", (req, res) => {
-  const db = readDB();
-  res.json({ success: true, logs: db.mailLogs || [] });
-});
-
 // ──────────────────────────────────────────────────────── COLLABORATION SYNC ENDPOINTS
 app.get("/api/collab/:roomId/stream", (req, res) => {
   const { roomId } = req.params;
   const name = String(req.query.name || "User");
   const color = String(req.query.color || "#3b82f6");
+  const avatarUrl = String(req.query.avatarUrl || "");
+  const avatarColor = String(req.query.avatarColor || "#3b82f6");
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -375,6 +322,18 @@ app.get("/api/collab/:roomId/stream", (req, res) => {
     writeDB(db);
   }
 
+  // Record baseline cursor on connection startup
+  db.rooms[roomId].cursors = db.rooms[roomId].cursors || {};
+  db.rooms[roomId].cursors[name] = {
+    name,
+    color,
+    x: 0,
+    y: 0,
+    lastActive: Date.now(),
+    avatarUrl,
+    avatarColor
+  };
+
   if (!clients[roomId]) {
     clients[roomId] = [];
   }
@@ -391,6 +350,12 @@ app.get("/api/collab/:roomId/stream", (req, res) => {
       comments: room.comments || [],
     })}\n\n`
   );
+
+  // Broadcast immediate update about cursors list
+  broadcastToRoom(roomId, {
+    type: "cursors",
+    cursors: db.rooms[roomId].cursors,
+  }, res);
 
   req.on("close", () => {
     clearInterval(keepAlive);
@@ -433,7 +398,7 @@ app.post("/api/collab/:roomId/update", (req, res) => {
 
 app.post("/api/collab/:roomId/cursor", (req, res) => {
   const { roomId } = req.params;
-  const { name, color, x, y } = req.body;
+  const { name, color, x, y, avatarUrl, avatarColor } = req.body;
 
   const db = readDB();
   if (!db.rooms[roomId]) {
@@ -441,7 +406,15 @@ app.post("/api/collab/:roomId/cursor", (req, res) => {
   }
 
   db.rooms[roomId].cursors = db.rooms[roomId].cursors || {};
-  db.rooms[roomId].cursors[name] = { name, color, x, y, lastActive: Date.now() };
+  db.rooms[roomId].cursors[name] = {
+    name,
+    color,
+    x,
+    y,
+    lastActive: Date.now(),
+    avatarUrl,
+    avatarColor
+  };
 
   // Write cursors on-the-fly? We keep them memory-focused or small write
   broadcastToRoom(roomId, {

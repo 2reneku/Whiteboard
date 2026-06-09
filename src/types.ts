@@ -83,6 +83,8 @@ export interface PeerCursor {
   x: number;
   y: number;
   lastActive: number;
+  avatarUrl?: string;
+  avatarColor?: string;
 }
 
 export type ThemeType = 'dark' | 'light' | 'solarized' | 'matrix' | 'slate';

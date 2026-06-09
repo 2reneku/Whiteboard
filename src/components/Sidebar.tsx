@@ -6,6 +6,8 @@ interface Board {
   id: string;
   name: string;
   updatedAt: number;
+  isCollab?: boolean;
+  roomId?: string;
 }
 
 interface SidebarProps {
@@ -256,8 +258,11 @@ export default function Sidebar({
                       onClick={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <p className="text-[11.5px] font-medium truncate leading-tight group-hover:text-zinc-100">
-                      {b.name}
+                    <p className="text-[11.5px] font-medium truncate leading-tight group-hover:text-zinc-100 flex items-center">
+                      {b.isCollab && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 shrink-0 animate-pulse" title={`Коллаборация: ${b.roomId}`} />
+                      )}
+                      <span>{b.name}</span>
                     </p>
                   )}
                 </div>
