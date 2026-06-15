@@ -45,33 +45,33 @@ export default function AIAssistant({
 
       // Headers ###
       if (trimmed.startsWith('###')) {
-        return <h4 key={idx} className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400 mt-4 mb-2">{trimmed.replace('###', '').trim()}</h4>;
+        return <h4 key={idx} className="text-[10px] font-mono font-bold uppercase tracking-wider text-teal-400 mt-4 mb-2 glow-text-teal">{trimmed.replace('###', '').trim()}</h4>;
       }
       if (trimmed.startsWith('##')) {
-        return <h3 key={idx} className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400 mt-4 mb-2">{trimmed.replace('##', '').trim()}</h3>;
+        return <h3 key={idx} className="text-xs font-mono font-bold uppercase tracking-wider text-teal-400 mt-4 mb-2 glow-text-teal">{trimmed.replace('##', '').trim()}</h3>;
       }
       if (trimmed.startsWith('#')) {
-        return <h2 key={idx} className="text-[11px] font-mono font-bold uppercase tracking-widest text-cyan-400 mt-4 mb-2">{trimmed.replace('#', '').trim()}</h2>;
+        return <h2 key={idx} className="text-[11px] font-mono font-bold uppercase tracking-widest text-teal-400 mt-4 mb-2 glow-text-teal">{trimmed.replace('#', '').trim()}</h2>;
       }
 
       // Bold **
       let renderedLine: React.ReactNode = trimmed;
       if (trimmed.includes('**')) {
         const parts = trimmed.split('**');
-        renderedLine = parts.map((part, i) => i % 2 === 1 ? <strong key={i} className="text-cyan-300 font-semibold">{part}</strong> : part);
+        renderedLine = parts.map((part, i) => i % 2 === 1 ? <strong key={i} className="text-teal-300 font-bold">{part}</strong> : part);
       }
 
       // Bullets '*' or '-'
       if (trimmed.startsWith('*') || trimmed.startsWith('-')) {
         return (
-          <div key={idx} className="flex items-start text-[11px] text-slate-300 ml-2 my-1 leading-relaxed">
-            <span className="text-cyan-500 mr-2 font-mono shrink-0">◇</span>
+          <div key={idx} className="flex items-start text-[11px] text-zinc-350 ml-2 my-1 leading-relaxed">
+            <span className="text-teal-500 mr-2 font-mono shrink-0">◇</span>
             <div>{typeof renderedLine === 'string' ? trimmed.substring(1).trim() : renderedLine}</div>
           </div>
         );
       }
 
-      return <p key={idx} className="text-[11px] text-slate-300 leading-relaxed my-1.5 break-words whitespace-pre-wrap">{renderedLine}</p>;
+      return <p key={idx} className="text-[11px] text-zinc-350 leading-relaxed my-1.5 break-words whitespace-pre-wrap font-sans">{renderedLine}</p>;
     });
   };
 
@@ -146,28 +146,38 @@ export default function AIAssistant({
   }, [aiAutoQuery]);
 
   return (
-    <div className="flex flex-col h-full bg-[#0d121f] text-slate-100 select-text">
+    <div className="flex flex-col h-full bg-[#09090b] text-zinc-200 select-text border-l border-zinc-850">
+      {/* Header bar */}
+      <div className="p-3 border-b border-zinc-900 bg-zinc-950/40 flex items-center justify-between shrink-0">
+        <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 font-bold flex items-center">
+          <Brain className="w-3.5 h-3.5 mr-1.5 text-teal-500" /> // ИНСПЕКТОР ИНТЕЛЛЕКТА (AI)
+        </span>
+        <span className="text-[8.5px] font-mono text-teal-400 bg-teal-950/30 border border-teal-900 px-1.5 py-0.2 select-none glow-teal">
+          ONLINE
+        </span>
+      </div>
+
       {/* Messages timeline log */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-slate-800">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-zinc-900">
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`flex flex-col max-w-[85%] ${
+            className={`flex flex-col max-w-[90%] ${
               msg.role === 'analyst' ? 'ml-auto items-end animate-fade-in' : 'mr-auto items-start'
             }`}
           >
             {/* Header tag */}
-            <div className="flex items-center space-x-1.5 mb-1.5">
+            <div className="flex items-center space-x-1.5 mb-1">
               {msg.role === 'analyst' ? (
                 <>
-                  <span className="text-[9px] uppercase tracking-wider font-mono text-slate-500 font-bold">инспектор (Вы)</span>
-                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-zinc-500 font-bold">инспектор (Вы)</span>
+                  <div className="w-1.5 h-1.5 rounded-none bg-zinc-500" />
                 </>
               ) : (
                 <>
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 rotate-45" />
-                  <span className="text-[9px] uppercase tracking-wider font-mono text-cyan-400 font-bold flex items-center">
-                    <Sparkles className="w-2.5 h-2.5 mr-1" /> OSINT Co-Analyst
+                  <div className="w-1.5 h-1.5 rounded-none bg-teal-400 rotate-45 glow-teal" />
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-teal-400 font-bold flex items-center glow-text-teal">
+                    <Sparkles className="w-2.5 h-2.5 mr-1 text-teal-400" /> OSINT Co-Analyst
                   </span>
                 </>
               )}
@@ -175,14 +185,14 @@ export default function AIAssistant({
 
             {/* Bubble body */}
             <div
-              className={`p-3 rounded text-[11px] leading-relaxed shadow-sm ${
+              className={`p-3 rounded-none text-[11px] leading-relaxed ${
                 msg.role === 'analyst'
-                  ? 'bg-slate-800 text-slate-100 border border-slate-700/60 rounded-tr-none'
-                  : 'bg-slate-900/60 border border-slate-800/80 rounded-tl-none font-sans'
+                  ? 'bg-zinc-900 text-zinc-100 border border-zinc-805'
+                  : 'bg-zinc-950/70 border border-zinc-900 font-sans'
               }`}
             >
               {msg.role === 'analyst' ? (
-                <p className="whitespace-pre-wrap">{msg.text}</p>
+                <p className="whitespace-pre-wrap font-mono text-[10.5px] text-zinc-200">{msg.text}</p>
               ) : (
                 <div className="space-y-1.5">{formatText(msg.text)}</div>
               )}
@@ -193,14 +203,14 @@ export default function AIAssistant({
         {loading && (
           <div className="flex flex-col mr-auto max-w-[85%] items-start">
             <div className="flex items-center space-x-1.5 mb-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-              <span className="text-[9px] uppercase tracking-wider font-mono text-cyan-400 font-bold">
+              <div className="w-1.5 h-1.5 rounded-none bg-teal-400 animate-ping glow-teal" />
+              <span className="text-[9px] uppercase tracking-wider font-mono text-teal-400 font-bold">
                 анализ графа расследования...
               </span>
             </div>
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded rounded-tl-none flex items-center space-x-2">
-              <RefreshCw className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-              <span className="text-[10px] font-mono text-slate-400">Формирую аналитическую гипотезу...</span>
+            <div className="p-3 bg-zinc-950/80 border border-zinc-90 w-full rounded-none flex items-center space-x-2.5">
+              <RefreshCw className="w-3.5 h-3.5 text-teal-400 animate-spin" />
+              <span className="text-[10px] font-mono text-zinc-400">Формирую аналитическую гипотезу...</span>
             </div>
           </div>
         )}
@@ -209,36 +219,36 @@ export default function AIAssistant({
       </div>
 
       {/* Preset analytic queries triggers */}
-      <div className="p-3 bg-slate-950 border-t border-slate-900 flex flex-wrap gap-1.5 max-h-16 shrink-0 justify-start overflow-hidden">
+      <div className="p-3 bg-zinc-950 border-t border-zinc-900 flex flex-wrap gap-1.5 shrink-0 justify-start">
         <button
           disabled={loading || nodes.length === 0}
           onClick={() => handleSend("Проведи глубокий тактический анализ доски. Выдели ключевых подозреваемых и связи.")}
-          className="text-[9px] font-mono font-bold bg-slate-900 border border-slate-800 hover:border-cyan-500/80 text-cyan-400 px-2.5 py-1 rounded cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-[9px] font-mono font-bold bg-zinc-900/40 border border-zinc-850 hover:border-teal-500 hover:text-teal-300 px-2.5 py-1 rounded-none cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:glow-teal"
         >
           🔍 Тактический анализ
         </button>
         <button
           disabled={loading || nodes.length === 0}
           onClick={() => handleSend("Какие 3-4 конкретных шага мне следует сделать дальше для верификации улик?")}
-          className="text-[9px] font-mono font-bold bg-slate-900 border border-slate-800 hover:border-cyan-500/80 text-cyan-400 px-2.5 py-1 rounded cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-[9px] font-mono font-bold bg-zinc-900/40 border border-zinc-850 hover:border-teal-500 hover:text-teal-300 px-2.5 py-1 rounded-none cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:glow-teal"
         >
-          ◇ Что проверять дальше?
+          ◇ Мероприятия проверки
         </button>
         <button
           disabled={loading || nodes.length === 0}
           onClick={() => handleSend("Найди на доске скрытые связи, аномалии или потенциальные зацепки.")}
-          className="text-[9px] font-mono font-bold bg-slate-900 border border-slate-800 hover:border-cyan-500/80 text-cyan-400 px-2.5 py-1 rounded cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-[9px] font-mono font-bold bg-zinc-900/40 border border-zinc-850 hover:border-teal-500 hover:text-teal-300 px-2.5 py-1 rounded-none cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:glow-teal"
         >
           ⚡ Поиск аномалий
         </button>
       </div>
 
       {/* Chat form footer */}
-      <div className="p-3 bg-[#0a0e1a] border-t border-slate-900 flex items-center space-x-2 shrink-0">
+      <div className="p-3 bg-zinc-950/80 border-t border-zinc-900 flex items-center space-x-2 shrink-0">
         <input
           disabled={loading}
           type="text"
-          className="flex-1 bg-slate-900 border border-slate-800 focus:border-cyan-500 text-xs text-slate-100 px-3 py-1.5 rounded-md outline-none"
+          className="flex-1 bg-zinc-900 border border-zinc-850 focus:border-teal-500 text-xs text-zinc-150 px-3 py-1.5 rounded-none outline-none focus:glow-teal transition-all font-mono"
           placeholder="Спросите AI про совпадения, IP, сотовые MCC..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -247,7 +257,7 @@ export default function AIAssistant({
         <button
           disabled={loading || !query.trim()}
           onClick={() => handleSend()}
-          className="w-8 h-8 rounded-md bg-cyan-600 hover:bg-cyan-500 text-slate-950 flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer"
+          className="w-8 h-8 rounded-none bg-teal-600 hover:bg-teal-500 text-zinc-950 flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed shrink-0 cursor-pointer border border-teal-500 hover:glow-teal"
         >
           <Send className="w-3.5 h-3.5" />
         </button>

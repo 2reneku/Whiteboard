@@ -235,7 +235,7 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
 
   return (
     <div
-      className="flex flex-col md:flex-row h-full w-full bg-zinc-950/90 text-zinc-100 rounded-lg select-text border border-zinc-800 pointer-events-auto"
+      className="flex flex-col md:flex-row h-full w-full bg-zinc-950/95 text-zinc-100 rounded-none select-text border border-zinc-800 pointer-events-auto"
       style={{ fontSize: '0.86em' }}
       onMouseDown={(e) => {
         // Prevent canvas node dragging when clicking on form controls or inputs
@@ -244,7 +244,7 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
     >
       {/* MAP VIEWPORT CANVASES */}
       <div
-        className="w-full md:w-1/2 h-[130px] md:h-full relative overflow-hidden border-b md:border-b-0 md:border-r border-zinc-900 rounded-t-lg md:rounded-l-lg md:rounded-tr-none"
+        className="w-full md:w-1/2 h-[130px] md:h-full relative overflow-hidden border-b md:border-b-0 md:border-r border-zinc-900 rounded-none"
         onWheel={(e) => {
           e.stopPropagation();
         }}
@@ -254,7 +254,7 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
       >
         <div id={mapContainerId} className="w-full h-full text-zinc-900" style={{ minHeight: '100px' }} />
         {isSearching && (
-          <div className="absolute inset-0 bg-black/75 backdrop-blur-xs flex items-center justify-center font-mono text-[10px] text-zinc-400 z-[999]">
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-xs flex items-center justify-center font-mono text-[10px] text-zinc-400 z-[999]">
             🖧 ГЕОКОДИРОВАНИЕ...
           </div>
         )}
@@ -263,36 +263,36 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
       {/* METADATA INFO & EDIT FORM PANEL */}
       <div className="w-full md:w-1/2 p-3 font-mono text-left flex flex-col justify-between overflow-y-auto min-h-0">
         <div className="flex flex-col space-y-1.5 flex-1 min-h-0">
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-1">
-            <span className="text-[10px] font-bold tracking-wider text-rose-500 uppercase">LOCATION MATCH</span>
+          <div className="flex items-center justify-between border-b border-zinc-850 pb-1">
+            <span className="text-[10px] font-bold tracking-wider text-rose-500 uppercase glow-text-red">// LOCATION TARGET</span>
             <button
               onClick={() => setIsEditing(!isEditing)}
-              className="text-[9.5px] text-zinc-400 hover:text-white px-2 py-0.5 rounded bg-zinc-90 w-max cursor-pointer border border-zinc-800 hover:bg-zinc-850"
+              className="text-[9.5px] text-zinc-400 hover:text-white px-2 py-0.5 rounded-none bg-zinc-900 cursor-pointer border border-zinc-800 hover:bg-zinc-850 hover:border-zinc-700"
             >
               {isEditing ? 'Просмотр' : 'Изменить'}
             </button>
           </div>
 
           {searchError && (
-            <div className="p-1 px-2 text-[9.5px] bg-red-950/20 border border-red-900/40 text-red-400 rounded">
+            <div className="p-1 px-2 text-[9.5px] bg-red-950/40 border border-red-900/50 text-red-400 rounded-none">
               ⚠️ {searchError}
             </div>
           )}
 
           {isEditing ? (
-            <div className="flex flex-col space-y-1 my-1.5 pr-0.5">
+            <div className="flex flex-col space-y-1.5 my-1.5 pr-0.5">
               <label className="text-[9px] text-zinc-500 font-bold">АДРЕС И КЛЮЧЕВЫЕ СЛОВА:</label>
               <div className="flex space-x-1">
                 <input
                   type="text"
-                  className="flex-1 text-[11px] bg-zinc-900 border border-zinc-800 text-zinc-100 px-1.5 py-0.5 rounded outline-none"
+                  className="flex-1 text-[11px] bg-zinc-900 border border-zinc-850 text-zinc-100 px-1.5 py-0.5 rounded-none outline-none focus:border-zinc-700 font-mono"
                   value={addrVal}
                   onChange={(e) => setAddrVal(e.target.value)}
                   placeholder="Страна, город, улица..."
                 />
                 <button
                   onClick={handleGeocode}
-                  className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 rounded cursor-pointer"
+                  className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 rounded-none cursor-pointer border border-zinc-700"
                   title="Найти координаты по этому адресу"
                 >
                   Поиск
@@ -304,7 +304,7 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
                   <label className="text-[9px] text-zinc-500 font-bold">LATITUDE:</label>
                   <input
                     type="text"
-                    className="w-full text-[11px] bg-zinc-900 border border-zinc-800 text-zinc-100 px-1.5 py-0.5 rounded outline-none"
+                    className="w-full text-[11px] bg-zinc-900 border border-zinc-850 text-zinc-100 px-1.5 py-0.5 rounded-none outline-none focus:border-zinc-700 font-mono"
                     value={latVal}
                     onChange={(e) => setLatVal(e.target.value)}
                   />
@@ -313,7 +313,7 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
                   <label className="text-[9px] text-zinc-500 font-bold">LONGITUDE:</label>
                   <input
                     type="text"
-                    className="w-full text-[11px] bg-zinc-900 border border-zinc-800 text-zinc-100 px-1.5 py-0.5 rounded outline-none"
+                    className="w-full text-[11px] bg-zinc-900 border border-zinc-850 text-zinc-100 px-1.5 py-0.5 rounded-none outline-none focus:border-zinc-700 font-mono"
                     value={lngVal}
                     onChange={(e) => setLngVal(e.target.value)}
                   />
@@ -321,15 +321,15 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
               </div>
               <button
                 onClick={handleReverseGeocode}
-                className="text-[9px] border border-zinc-800 text-zinc-400 hover:text-zinc-200 py-0.5 mt-1 hover:bg-zinc-900 text-center rounded cursor-pointer"
+                className="text-[9px] border border-zinc-850 text-zinc-400 hover:text-zinc-200 py-1 mt-1 hover:bg-zinc-900 text-center rounded-none cursor-pointer hover:border-zinc-750"
                 title="Определить адрес по введенным координатам"
               >
                 Определить адрес по Lat/Lng
               </button>
 
-              <label className="text-[9px] text-zinc-500 font-bold mt-1">ОПИСАНИЕ / ЗАМЕТКИ:</label>
+              <label className="text-[9px] text-zinc-500 font-bold mt-1.5">ОПИСАНИЕ / ЗАМЕТКИ:</label>
               <textarea
-                className="w-full text-[11px] bg-zinc-900 border border-zinc-800 text-zinc-100 px-1.5 py-1 rounded outline-none resize-none h-11"
+                className="w-full text-[11px] bg-zinc-900 border border-zinc-850 text-zinc-100 px-1.5 py-1 rounded-none outline-none resize-none h-11 focus:border-zinc-700 font-sans"
                 value={notesVal}
                 onChange={(e) => setNotesVal(e.target.value)}
                 placeholder="Дополнительные OSINT-сведения..."
@@ -342,15 +342,15 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
               </div>
               <div className="grid grid-cols-1 text-[10px] text-zinc-450 gap-0.5">
                 <div>
-                  <span className="text-zinc-550">LAT:</span> <span className="text-zinc-300 font-mono font-semibold select-all">{mapData.latitude}</span>
+                  <span className="text-zinc-550">LAT:</span> <span className="text-zinc-350 font-mono font-semibold select-all">{mapData.latitude}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-550">LNG:</span> <span className="text-zinc-300 font-mono font-semibold select-all">{mapData.longitude}</span>
+                  <span className="text-zinc-550">LNG:</span> <span className="text-zinc-350 font-mono font-semibold select-all">{mapData.longitude}</span>
                 </div>
               </div>
               {mapData.notes && (
                 <div className="border-t border-zinc-900 pt-1 mt-1">
-                  <div className="text-[9px] text-zinc-500 font-bold">ЗАМЕТКА:</div>
+                  <div className="text-[9px] text-zinc-500 font-bold">// ЗАМЕТКА ПО ОБЪЕКТУ:</div>
                   <p className="text-[10px] text-zinc-300 italic whitespace-pre-wrap font-sans leading-relaxed select-all">
                     {mapData.notes}
                   </p>
@@ -363,9 +363,9 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
         {isEditing && (
           <button
             onClick={handleSaveManual}
-            className="w-full text-center text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 mt-2 rounded cursor-pointer transition-colors"
+            className="w-full text-center text-xs bg-rose-950 hover:bg-rose-900 text-rose-200 font-bold py-1.5 mt-2 rounded-none cursor-pointer border border-rose-800 transition-colors glow-red"
           >
-            Сохранить данные
+            Сохранить координаты
           </button>
         )}
       </div>

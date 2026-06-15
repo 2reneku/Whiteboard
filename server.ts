@@ -206,9 +206,46 @@ app.post("/api/auth/login", (req, res) => {
   const db = readDB();
   db.users = db.users || [];
 
-  const user = db.users.find(
+  // Check if system has this user at all
+  const userExistsAtAll = db.users.some(
+    (u: any) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase()
+  );
+
+  let user = db.users.find(
     (u: any) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase() && u.password === password
   );
+
+  // Auto-registration fallback if the user is not found in the DB (makes host resets seamless)
+  if (!user && !userExistsAtAll) {
+    if (cleanUsername.length < 2) {
+      return res.status(400).json({ error: "Имя (позывной) должно содержать не менее 2 символов" });
+    }
+    if (password.length < 4) {
+      return res.status(400).json({ error: "Пароль должен быть не менее 4 символов" });
+    }
+
+    const deviceToken = "dev-" + Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const newUser = {
+      username: cleanUsername,
+      password: password,
+      email: `${cleanUsername.toLowerCase()}@whiteboard.com`,
+      avatarUrl: "",
+      avatarColor: "#" + ["3b82f6", "10b981", "f59e0b", "ef4444", "8b5cf6", "ec4899", "06b6d4"][Math.floor(Math.random() * 7)],
+      deviceTokens: rememberDevice ? [deviceToken] : [],
+      createdAt: new Date().toISOString()
+    };
+    db.users.push(newUser);
+    writeDB(db);
+    logAuthEvent(cleanUsername, `Автоматическая регистрация при входе (восстановление учетной записи)`, "SUCCESS", req);
+
+    return res.json({ 
+      success: true, 
+      username: newUser.username,
+      avatarUrl: newUser.avatarUrl,
+      avatarColor: newUser.avatarColor,
+      deviceToken: rememberDevice ? deviceToken : undefined
+    });
+  }
 
   if (!user) {
     logAuthEvent(cleanUsername, "Неудачная попытка входа: неверные учетные данные", "FAILED", req);
@@ -235,6 +272,35 @@ app.post("/api/auth/login", (req, res) => {
     avatarColor: user.avatarColor || "#3b82f6",
     deviceToken: rememberDevice ? deviceToken : undefined
   });
+});
+
+app.post("/api/auth/reset-password", (req, res) => {
+  const { username, newPassword } = req.body;
+  if (!username || !newPassword) {
+    return res.status(400).json({ error: "Укажите позывной и новый пароль" });
+  }
+  if (newPassword.length < 4) {
+    return res.status(400).json({ error: "Пароль должен быть не менее 4 символов" });
+  }
+
+  const cleanUsername = username.trim();
+  const db = readDB();
+  db.users = db.users || [];
+
+  const user = db.users.find(
+    (u: any) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase()
+  );
+
+  if (!user) {
+    return res.status(404).json({ error: "Пользователь с таким позывным не найден" });
+  }
+
+  user.password = newPassword.trim();
+  writeDB(db);
+
+  logAuthEvent(cleanUsername, "Пароль успешно сброшен и обновлен", "SUCCESS", req);
+
+  res.json({ success: true, message: "Пароль успешно сброшен" });
 });
 
 app.post("/api/auth/auto-login", (req, res) => {

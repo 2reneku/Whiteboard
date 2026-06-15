@@ -10,7 +10,7 @@ import {
   Share2, Sparkles, Maximize2, Grid3X3, CornerUpLeft, X, Check,
   LogOut, Plus, Trash2, Edit2, Pencil, Pointer, Link2, FileText,
   UserCheck, Lock, Palette, Search, Layout, ChevronRight, FolderPlus, Clock,
-  Mail, Chrome, Server, Send, Shield
+  Mail, Chrome, Server, Send, Shield, ChevronDown
 } from 'lucide-react';
 
 interface OSINTBoard {
@@ -33,7 +33,7 @@ export default function App() {
 
   // Authentication states
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'reset'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
@@ -141,6 +141,8 @@ export default function App() {
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [renamingText, setRenamingText] = useState('');
   const [newlyCreatedBoardId, setNewlyCreatedBoardId] = useState<string | null>(null);
+  const [draggedBoardId, setDraggedBoardId] = useState<string | null>(null);
+  const [dragOverBoardId, setDragOverBoardId] = useState<string | null>(null);
   const dashboardCanceledRef = useRef(false);
 
   // ──────────────────────────────────────────────────────── GOOGLE SIGN-IN & SMTP SYSTEM STATES
@@ -149,6 +151,9 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [tempAvatarUrl, setTempAvatarUrl] = useState('');
   const [tempAvatarColor, setTempAvatarColor] = useState('#3b82f6');
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showMyProfileModal, setShowMyProfileModal] = useState(false);
 
   const handleUpdateProfile = async (url: string, color: string) => {
     if (!currentUsername) return false;
@@ -212,17 +217,10 @@ export default function App() {
         } catch (err) {
           console.error("Auto login failed:", err);
         }
+        // If deviceToken exists but failed (e.g. server restarted or invalid token),
+        // clear local storage so the analytic can enter credentials properly and cleanly.
         localStorage.removeItem('whiteboard_device_token');
-      }
-      
-      const stored = localStorage.getItem('whiteboard_user');
-      if (stored) {
-        setCurrentUsername(stored);
-        const cachedUrl = localStorage.getItem(`whiteboard_avatar_url_${stored}`);
-        const cachedColor = localStorage.getItem(`whiteboard_avatar_color_${stored}`);
-        if (cachedUrl) setCurrentUserAvatarUrl(cachedUrl);
-        if (cachedColor) setCurrentUserAvatarColor(cachedColor);
-        loadUserBoards(stored);
+        localStorage.removeItem('whiteboard_user');
       }
     };
     
@@ -406,7 +404,7 @@ export default function App() {
           setSelectedCommentId(null);
           pushCollabUpdate(nodes, edges, strokes, nextComments);
         }
-      } else if (e.ctrlKey && code === 'KeyZ') {
+      } else if ((e.ctrlKey || e.metaKey) && (code === 'KeyZ' || e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'я')) {
         e.preventDefault();
         handleUndo();
       }
@@ -491,12 +489,22 @@ export default function App() {
       return;
     }
 
-    const endpoint = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
-    const payload = {
+    let endpoint = '/api/auth/login';
+    let payload: any = {
       username: authUsername.trim(),
       password: authPassword.trim(),
       rememberDevice: rememberDevice
     };
+
+    if (authMode === 'register') {
+      endpoint = '/api/auth/register';
+    } else if (authMode === 'reset') {
+      endpoint = '/api/auth/reset-password';
+      payload = {
+        username: authUsername.trim(),
+        newPassword: authPassword.trim()
+      };
+    }
 
     try {
       const res = await fetch(endpoint, {
@@ -507,7 +515,7 @@ export default function App() {
       const data = await res.json();
 
       if (!res.ok) {
-        setAuthError(data.error || 'Аутентификация не удалась.');
+        setAuthError(data.error || 'Действие не удалось.');
         return;
       }
 
@@ -517,6 +525,9 @@ export default function App() {
         if (data.deviceToken && rememberDevice) {
           localStorage.setItem('whiteboard_device_token', data.deviceToken);
         }
+      } else if (authMode === 'reset') {
+        setAuthSuccess('Пароль успешно сброшен и обновлен! Теперь вы можете авторизоваться.');
+        setAuthMode('login');
       } else {
         if (data.deviceToken && rememberDevice) {
           localStorage.setItem('whiteboard_device_token', data.deviceToken);
@@ -533,7 +544,7 @@ export default function App() {
         setCurrentView('dashboard');
       }
     } catch (err) {
-      setAuthError('Ошибка подключения к серверу авторизации. Инициируйте вход в гостевом терминале.');
+      setAuthError('Ошибка подключения к серверу авторизации. Войдите в гостевом режиме.');
     }
   };
 
@@ -1149,6 +1160,163 @@ ${formattedLines}
     }
   };
 
+  const handleMergeBoards = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    const sourceBoard = boards.find(b => b.id === sourceId);
+    const targetBoard = boards.find(b => b.id === targetId);
+    if (!sourceBoard || !targetBoard) return;
+
+    // Find bounding box for target board elements
+    let targetMaxX = -Infinity;
+    let targetMinY = Infinity;
+    
+    if (targetBoard.nodes && targetBoard.nodes.length > 0) {
+      targetBoard.nodes.forEach(n => {
+        const right = (n.x || 0) + (n.width || 280);
+        if (right > targetMaxX) targetMaxX = right;
+        if (n.y < targetMinY) targetMinY = n.y;
+      });
+    }
+    if (targetBoard.strokes && targetBoard.strokes.length > 0) {
+      targetBoard.strokes.forEach(s => {
+        if (s.points) {
+          s.points.forEach(p => {
+            if (p.x > targetMaxX) targetMaxX = p.x;
+            if (p.y < targetMinY) targetMinY = p.y;
+          });
+        }
+      });
+    }
+    if (targetBoard.comments && targetBoard.comments.length > 0) {
+      targetBoard.comments.forEach(c => {
+        if (c.x !== undefined) {
+          if (c.x > targetMaxX) targetMaxX = c.x;
+          if (c.y !== undefined && c.y < targetMinY) targetMinY = c.y;
+        }
+      });
+    }
+
+    // Find bounding box for source board elements
+    let sourceMinX = Infinity;
+    let sourceMinY = Infinity;
+
+    if (sourceBoard.nodes && sourceBoard.nodes.length > 0) {
+      sourceBoard.nodes.forEach(n => {
+        if (n.x < sourceMinX) sourceMinX = n.x;
+        if (n.y < sourceMinY) sourceMinY = n.y;
+      });
+    }
+    if (sourceBoard.strokes && sourceBoard.strokes.length > 0) {
+      sourceBoard.strokes.forEach(s => {
+        if (s.points) {
+          s.points.forEach(p => {
+            if (p.x < sourceMinX) sourceMinX = p.x;
+            if (p.y < sourceMinY) sourceMinY = p.y;
+          });
+        }
+      });
+    }
+    if (sourceBoard.comments && sourceBoard.comments.length > 0) {
+      sourceBoard.comments.forEach(c => {
+        if (c.x !== undefined) {
+          if (c.x < sourceMinX) sourceMinX = c.x;
+          if (c.y !== undefined && c.y < sourceMinY) sourceMinY = c.y;
+        }
+      });
+    }
+
+    const hasTargetElements = targetMaxX !== -Infinity && targetMinY !== Infinity;
+    const hasSourceElements = sourceMinX !== Infinity && sourceMinY !== Infinity;
+
+    let shiftX = 0;
+    let shiftY = 0;
+
+    if (hasTargetElements && hasSourceElements) {
+      const spacingX = 350; // Spacious padding to avoid overlaps
+      shiftX = (targetMaxX + spacingX) - sourceMinX;
+      shiftY = targetMinY - sourceMinY; // Match tops of structures so they align nicely
+    }
+
+    // Shift all source nodes, strokes and comments to avoid overlapping
+    const shiftedSourceNodes = (sourceBoard.nodes || []).map(n => ({
+      ...n,
+      x: n.x + shiftX,
+      y: n.y + shiftY
+    }));
+
+    const shiftedSourceStrokes = (sourceBoard.strokes || []).map(s => {
+      if (s.points) {
+        return {
+          ...s,
+          points: s.points.map(p => ({
+            ...p,
+            x: p.x + shiftX,
+            y: p.y + shiftY
+          }))
+        };
+      }
+      return s;
+    });
+
+    const shiftedSourceComments = (sourceBoard.comments || []).map(c => {
+      if (c.x !== undefined) {
+        return {
+          ...c,
+          x: c.x + shiftX,
+          y: c.y !== undefined ? c.y + shiftY : undefined
+        };
+      }
+      return c;
+    });
+
+    // Combine materials: nodes, edges, strokes, comments
+    const mergedNodes = [...(targetBoard.nodes || []), ...shiftedSourceNodes];
+    const mergedEdges = [...(targetBoard.edges || []), ...(sourceBoard.edges || [])];
+    const mergedStrokes = [...(targetBoard.strokes || []), ...shiftedSourceStrokes];
+    const mergedComments = [...(targetBoard.comments || []), ...shiftedSourceComments];
+
+    // Build the updated target board
+    const updatedTargetBoard = {
+      ...targetBoard,
+      nodes: mergedNodes,
+      edges: mergedEdges,
+      strokes: mergedStrokes,
+      comments: mergedComments,
+      updatedAt: Date.now()
+    };
+
+    // Filter out the source board and update target board in the array
+    const updatedList = boards
+      .filter(b => b.id !== sourceId)
+      .map(b => b.id === targetId ? updatedTargetBoard : b);
+
+    setBoards(updatedList);
+    if (currentUsername) {
+      localStorage.setItem(`whiteboard_boards_${currentUsername}`, JSON.stringify(updatedList));
+    }
+
+    // If we merged the current active board into another, switch to target
+    if (currentBoardId === sourceId) {
+      setCurrentBoardId(targetId);
+      setNodes(mergedNodes);
+      setEdges(mergedEdges);
+      setStrokes(mergedStrokes);
+      setComments(mergedComments);
+    } else if (currentBoardId === targetId) {
+      // Just update current board state if we are active on target
+      setNodes(mergedNodes);
+      setEdges(mergedEdges);
+      setStrokes(mergedStrokes);
+      setComments(mergedComments);
+    }
+
+    setToastNotification({
+      message: `Доска "${sourceBoard.name}" успешно объединена с "${targetBoard.name}"!`,
+      type: 'success'
+    });
+    setTimeout(() => setToastNotification(null), 3500);
+  };
+
   const handleExportJSON = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes, edges, strokes, comments }, null, 2));
     const dlAnchorElem = document.createElement('a');
@@ -1302,7 +1470,7 @@ ${formattedLines}
 
               <div>
                 <label className="block text-[9px] uppercase font-mono tracking-widest text-zinc-500 mb-1.5 font-bold">
-                  Секретный пароль
+                  {authMode === 'reset' ? 'Новый секретный пароль' : 'Секретный пароль'}
                 </label>
                 <input
                   type="password"
@@ -1315,42 +1483,85 @@ ${formattedLines}
                 />
               </div>
 
-              <div className="flex items-center space-x-2 py-0.5">
-                <input
-                  type="checkbox"
-                  id="rememberDevice"
-                  className="accent-white cursor-pointer w-3.5 h-3.5 focus:ring-0 rounded"
-                  checked={rememberDevice}
-                  onChange={(e) => setRememberDevice(e.target.checked)}
-                />
-                <label htmlFor="rememberDevice" className="text-[9.5px] font-mono text-zinc-400 select-none cursor-pointer">
-                  Запомнить устройство
-                </label>
-              </div>
+              {authMode !== 'reset' && (
+                <div className="flex items-center space-x-2 py-0.5">
+                  <input
+                    type="checkbox"
+                    id="rememberDevice"
+                    className="accent-white cursor-pointer w-3.5 h-3.5 focus:ring-0 rounded"
+                    checked={rememberDevice}
+                    onChange={(e) => setRememberDevice(e.target.checked)}
+                  />
+                  <label htmlFor="rememberDevice" className="text-[9.5px] font-mono text-zinc-404 select-none cursor-pointer">
+                    Запомнить устройство
+                  </label>
+                </div>
+              )}
 
               <button
                 type="submit"
                 className="w-full bg-white hover:bg-zinc-200 text-black py-2.5 rounded text-xs font-mono font-bold uppercase cursor-pointer transition-all duration-100 flex items-center justify-center space-x-2"
               >
                 <UserCheck className="w-4 h-4 animate-pulse mr-0.5" />
-                <span>{authMode === 'login' ? 'Авторизоваться' : 'Зарегистрироваться'}</span>
+                <span>
+                  {authMode === 'login' ? 'Авторизоваться' : authMode === 'register' ? 'Зарегистрироваться' : 'Сбросить пароль'}
+                </span>
               </button>
             </form>
 
-            <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-zinc-404">
-              <span>
-                {authMode === 'login' ? 'Нет позывного?' : 'Уже зарегистрированы?'}
-              </span>
-              <button
-                onClick={() => {
-                  setAuthMode(authMode === 'login' ? 'register' : 'login');
-                  setAuthError('');
-                  setAuthSuccess('');
-                }}
-                className="text-white hover:underline cursor-pointer font-bold"
-              >
-                {authMode === 'login' ? 'Создать аккаунт' : 'Войти в систему'}
-              </button>
+            <div className="flex flex-col space-y-2 pt-2 text-[10.5px] font-mono text-zinc-400">
+              {authMode === 'login' ? (
+                <div className="flex justify-between items-center w-full">
+                  <button
+                    onClick={() => {
+                      setAuthMode('register');
+                      setAuthError('');
+                      setAuthSuccess('');
+                    }}
+                    className="text-white hover:underline cursor-pointer font-bold"
+                  >
+                    Создать аккаунт
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthMode('reset');
+                      setAuthError('');
+                      setAuthSuccess('');
+                    }}
+                    className="text-zinc-400 hover:text-white hover:underline cursor-pointer"
+                  >
+                    Забыли пароль?
+                  </button>
+                </div>
+              ) : authMode === 'register' ? (
+                <div className="flex justify-between items-center w-full">
+                  <span>Уже зарегистрированы?</span>
+                  <button
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthError('');
+                      setAuthSuccess('');
+                    }}
+                    className="text-white hover:underline cursor-pointer font-bold"
+                  >
+                    Войти в систему
+                  </button>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center w-full">
+                  <span>Вспомнили позывной?</span>
+                  <button
+                    onClick={() => {
+                      setAuthMode('login');
+                      setAuthError('');
+                      setAuthSuccess('');
+                    }}
+                    className="text-white hover:underline cursor-pointer font-bold"
+                  >
+                    Вернуться к входу
+                  </button>
+                </div>
+              )}
             </div>
 
             <button
@@ -1384,7 +1595,7 @@ ${formattedLines}
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-zinc-905/40 rounded-full blur-3xl pointer-events-none z-0" />
 
         {/* COMPACT DASHBOARD HEADER */}
-        <header className="h-11 border-b border-zinc-900/60 flex items-center justify-between px-6 bg-zinc-950/40 backdrop-blur-md shrink-0 z-10 select-none">
+        <header className="h-11 border-b border-zinc-900/60 flex items-center justify-between px-6 bg-zinc-950/40 backdrop-blur-md shrink-0 z-[150] relative select-none">
           <div className="flex items-center space-x-3">
             <Layout className="w-4.5 h-4.5 text-zinc-400 animate-pulse" />
             <span className="font-mono text-xs text-white uppercase font-black tracking-widest">
@@ -1392,15 +1603,11 @@ ${formattedLines}
             </span>
           </div>
 
-          <div className="flex items-center space-x-3.5">
+          <div className="relative">
             <button
-              onClick={() => {
-                setTempAvatarUrl(currentUserAvatarUrl);
-                setTempAvatarColor(currentUserAvatarColor);
-                setShowProfileModal(true);
-              }}
-              className="flex items-center space-x-1.5 p-1 bg-zinc-900 border border-zinc-850 hover:border-zinc-750 hover:text-white rounded-lg cursor-pointer transition-all pr-2.5"
-              title="Редактировать профиль аналитика"
+              onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+              className="flex items-center space-x-1.5 p-1 bg-zinc-900 border border-zinc-850 hover:border-zinc-700 hover:text-white rounded-lg cursor-pointer transition-all pr-2.5"
+              title="Открыть меню профиля"
             >
               <div
                 className="w-5.5 h-5.5 rounded-full flex items-center justify-center font-mono text-[9px] text-white font-bold shrink-0 overflow-hidden"
@@ -1413,15 +1620,63 @@ ${formattedLines}
                 )}
               </div>
               <span className="text-[10px] font-mono text-zinc-300 font-bold uppercase">{currentUsername}</span>
+              <ChevronDown className="w-3 h-3 text-zinc-500" />
             </button>
-            <div className="w-px h-4.5 bg-zinc-850" />
-            <button
-              onClick={handleLogout}
-              className="text-[10px] font-mono text-zinc-500 hover:text-red-400 flex items-center space-x-1 hover:underline cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Выйти</span>
-            </button>
+
+            {profileDropdownOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-[99999]" 
+                  onClick={() => setProfileDropdownOpen(false)} 
+                />
+                <div className="absolute right-0 mt-1.5 w-52 bg-zinc-950 border border-zinc-850 rounded-lg shadow-2xl z-[100000] p-1 animate-fade-in divide-y divide-zinc-900 animate-scale-up">
+                  <div className="px-2.5 py-2 text-left">
+                    <div className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider">Профиль</div>
+                    <div className="text-xs font-bold text-zinc-200 mt-0.5 truncate">{currentUsername}</div>
+                    <div className="text-[8px] font-mono text-emerald-500 flex items-center mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse" />
+                      В сети
+                    </div>
+                  </div>
+                  <div className="py-1 text-left">
+                    <button
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        setShowMyProfileModal(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-900 rounded font-sans transition-colors flex items-center space-x-2 cursor-pointer"
+                    >
+                      <span>📂</span>
+                      <span>Мой профиль</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        setTempAvatarUrl(currentUserAvatarUrl);
+                        setTempAvatarColor(currentUserAvatarColor);
+                        setShowProfileModal(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-900 rounded font-sans transition-colors flex items-center space-x-2 cursor-pointer"
+                    >
+                      <span>⚙️</span>
+                      <span>Настройки профиля</span>
+                    </button>
+                  </div>
+                  <div className="py-1 text-left">
+                    <button
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        setShowLogoutConfirm(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-red-400 hover:text-red-300 hover:bg-red-955/15 rounded font-sans transition-colors flex items-center space-x-2 cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-red-500" />
+                      <span>Выйти</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </header>
 
@@ -1483,7 +1738,42 @@ ${formattedLines}
                       handleSwitchBoard(b.id);
                       setCurrentView('board');
                     }}
-                    className="group border border-zinc-850 hover:border-zinc-650 bg-zinc-950/60 hover:bg-zinc-950 rounded-xl p-5 flex flex-col justify-between h-44 cursor-pointer relative overflow-hidden transition-all duration-150 shadow-md select-none"
+                    draggable={renamingBoardId !== b.id}
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      setDraggedBoardId(b.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedBoardId(null);
+                      setDragOverBoardId(null);
+                    }}
+                    onDragOver={(e) => {
+                      if (draggedBoardId && draggedBoardId !== b.id) {
+                        e.preventDefault();
+                      }
+                    }}
+                    onDragEnter={(e) => {
+                      if (draggedBoardId && draggedBoardId !== b.id) {
+                        setDragOverBoardId(b.id);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverBoardId === b.id) {
+                        setDragOverBoardId(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverBoardId(null);
+                      if (draggedBoardId && draggedBoardId !== b.id) {
+                        handleMergeBoards(draggedBoardId, b.id);
+                      }
+                    }}
+                    className={`group border rounded-xl p-5 flex flex-col justify-between h-44 cursor-pointer relative overflow-hidden transition-all duration-150 shadow-md select-none ${
+                      dragOverBoardId === b.id 
+                        ? 'border-indigo-500 bg-indigo-950/25 ring-2 ring-indigo-500/50 scale-[1.02]' 
+                        : 'border-zinc-850 hover:border-zinc-650 bg-zinc-950/60 hover:bg-zinc-950'
+                    }`}
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -1756,6 +2046,120 @@ ${formattedLines}
           </div>
         )}
 
+        {/* Logout Confirmation Dialog Modal */}
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl p-6 relative animate-fade-in space-y-5 animate-scale-up text-left">
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div>
+                <h3 className="font-mono text-xs uppercase tracking-widest font-bold text-rose-500 flex items-center space-x-2">
+                  <span>⚠️</span>
+                  <span>Выход</span>
+                </h3>
+                <p className="text-[11px] text-zinc-400 mt-2 leading-normal font-sans">
+                  Вы уверены, что хотите выйти из учетной записи?
+                </p>
+              </div>
+
+              <div className="flex space-x-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded border border-zinc-850 cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLogoutConfirm(false);
+                    handleLogout();
+                  }}
+                  className="flex-1 bg-rose-650 hover:bg-rose-700 text-white py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded cursor-pointer transition-colors"
+                >
+                  Выйти
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* View My Profile Dossier Modal */}
+        {showMyProfileModal && (
+          <div className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="w-full max-w-sm bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl p-5 relative animate-fade-in space-y-4 animate-scale-up text-left">
+              <button
+                onClick={() => setShowMyProfileModal(false)}
+                className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div>
+                <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-2">
+                  <span>👤</span>
+                  <span>Профиль аналитика</span>
+                </h3>
+                <p className="text-[9px] text-zinc-500 font-mono mt-0.5 leading-tight uppercase">
+                  Информация об учетной записи
+                </p>
+              </div>
+
+              <div className="p-4 bg-zinc-900/40 border border-zinc-900/60 rounded-lg flex items-center space-x-4">
+                <div
+                  className="w-14 h-14 rounded-full border border-zinc-800 shadow-inner flex items-center justify-center font-mono text-lg font-black text-white overflow-hidden shrink-0"
+                  style={{ backgroundColor: currentUserAvatarColor }}
+                >
+                  {currentUserAvatarUrl ? (
+                    <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-mono text-zinc-500 uppercase">Пользователь:</div>
+                  <div className="text-sm font-bold text-zinc-200 uppercase tracking-wide truncate">{currentUsername}</div>
+                  <div className="text-[8.5px] font-mono text-emerald-500 mt-1 flex items-center">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
+                    В сети
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2 border-t border-zinc-900 pt-3 text-[10px] font-mono">
+                <div className="flex justify-between items-center text-zinc-400">
+                  <span className="text-zinc-550">Провайдер:</span>
+                  <span className="text-zinc-300">Локальный</span>
+                </div>
+                <div className="flex justify-between items-center text-zinc-400">
+                  <span className="text-zinc-550">Адрес:</span>
+                  <span className="text-zinc-300 select-all font-mono text-[9px]">{`${currentUsername?.toLowerCase()}@whiteboard.com`}</span>
+                </div>
+                <div className="flex justify-between items-center text-zinc-400">
+                  <span className="text-zinc-550">Количество досок:</span>
+                  <span className="text-zinc-300 font-bold">{boards.length}</span>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMyProfileModal(false)}
+                  className="w-full bg-zinc-900 hover:bg-zinc-850 text-zinc-300 py-2 text-[10px] uppercase font-mono tracking-wider font-bold rounded border border-zinc-850 cursor-pointer"
+                >
+                  Закрыть
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Floating self-fading notification toast */}
         {toastNotification && (
           <div className="fixed bottom-6 right-6 z-[9999] bg-zinc-950/90 border border-zinc-800 text-white px-5 py-4 rounded-xl shadow-2xl backdrop-blur-md flex items-center space-x-3.5 animate-bounce font-sans text-xs max-w-sm">
@@ -1772,7 +2176,7 @@ ${formattedLines}
     <div className={`w-screen h-screen flex flex-col overflow-hidden text-zinc-100 ${currentTheme.bg}`}>
       
       {/* ── TOP BAR (EXQUISITE COMPACT MINIMALIST HEADER) */}
-      <header className="h-11 border-b border-zinc-900/60 flex items-center justify-between px-3 select-none bg-zinc-950/40 backdrop-blur-md shrink-0 z-40">
+      <header className="h-11 border-b border-zinc-900/60 flex items-center justify-between px-3 select-none bg-zinc-950/40 backdrop-blur-md shrink-0 z-[150]">
         
         {/* Left section: Back navigation, Switch theme inline and board quick stats */}
         <div className="flex items-center space-x-3.5">
@@ -1903,35 +2307,81 @@ ${formattedLines}
             Export
           </button>
 
-          <button
-            onClick={() => {
-              setTempAvatarUrl(currentUserAvatarUrl);
-              setTempAvatarColor(currentUserAvatarColor);
-              setShowProfileModal(true);
-            }}
-            className="flex items-center space-x-1.5 p-1 bg-zinc-900 border border-zinc-850 hover:border-zinc-700 rounded-lg cursor-pointer transition-colors"
-            title="Редактировать профиль аналитика"
-          >
-            <div
-              className="w-5.5 h-5.5 rounded-full flex items-center justify-center font-mono text-[9px] text-white font-bold shrink-0 overflow-hidden"
-              style={{ backgroundColor: currentUserAvatarColor }}
+          <div className="relative">
+            <button
+              onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+              className="flex items-center space-x-1.5 p-1 bg-zinc-900 border border-zinc-850 hover:border-zinc-700 hover:text-white rounded-lg cursor-pointer transition-all pr-1.5"
+              title="Открыть меню профиля"
             >
-              {currentUserAvatarUrl ? (
-                <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
-              )}
-            </div>
-            <span className="text-[10px] font-mono text-zinc-300 font-bold uppercase pr-1.5 max-w-[80px] truncate md:inline hidden">{currentUsername}</span>
-          </button>
+              <div
+                className="w-5.5 h-5.5 rounded-full flex items-center justify-center font-mono text-[9px] text-white font-bold shrink-0 overflow-hidden"
+                style={{ backgroundColor: currentUserAvatarColor }}
+              >
+                {currentUserAvatarUrl ? (
+                  <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
+                )}
+              </div>
+              <span className="text-[10px] font-mono text-zinc-300 font-bold uppercase pr-1 md:inline hidden">{currentUsername}</span>
+              <ChevronDown className="w-3 h-3 text-zinc-500" />
+            </button>
 
-          <button
-            onClick={handleLogout}
-            className="p-1 px-2.5 bg-zinc-900 hover:bg-red-955/20 text-zinc-500 hover:text-red-400 rounded cursor-pointer border border-zinc-850 flex items-center justify-center"
-            title={`Выйти из аналитика: ${currentUsername}`}
-          >
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
+            {profileDropdownOpen && (
+              <>
+                <div 
+                  className="fixed inset-0 z-[99999]" 
+                  onClick={() => setProfileDropdownOpen(false)} 
+                />
+                <div className="absolute right-0 mt-1.5 w-52 bg-zinc-950 border border-zinc-850 rounded-lg shadow-2xl z-[100000] p-1 animate-fade-in divide-y divide-zinc-900 animate-scale-up">
+                  <div className="px-2.5 py-2 text-left">
+                    <div className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider">Профиль</div>
+                    <div className="text-xs font-bold text-zinc-200 mt-0.5 truncate">{currentUsername}</div>
+                    <div className="text-[8px] font-mono text-emerald-500 flex items-center mt-0.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-550 mr-1 animate-pulse" />
+                      В сети
+                    </div>
+                  </div>
+                  <div className="py-1 text-left">
+                    <button
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        setShowMyProfileModal(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-900 rounded font-sans transition-colors flex items-center space-x-2 cursor-pointer"
+                    >
+                      <span>📂</span>
+                      <span>Мой профиль</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        setTempAvatarUrl(currentUserAvatarUrl);
+                        setTempAvatarColor(currentUserAvatarColor);
+                        setShowProfileModal(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-900 rounded font-sans transition-colors flex items-center space-x-2 cursor-pointer"
+                    >
+                      <span>⚙️</span>
+                      <span>Настройки профиля</span>
+                    </button>
+                  </div>
+                  <div className="py-1 text-left">
+                    <button
+                      onClick={() => {
+                        setProfileDropdownOpen(false);
+                        setShowLogoutConfirm(true);
+                      }}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-red-400 hover:text-red-300 hover:bg-red-955/15 rounded font-sans transition-colors flex items-center space-x-2 cursor-pointer"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-red-500" />
+                      <span>Выйти</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -1948,6 +2398,7 @@ ${formattedLines}
               onCreateBoard={handleCreateNewBoard}
               onRenameBoard={handleRenameBoard}
               onDeleteBoard={handleDeleteBoard}
+              onMergeBoards={handleMergeBoards}
               comments={comments}
               onAddGeneralComment={handleAddGeneralComment}
               themeColors={currentTheme}
@@ -2373,6 +2824,120 @@ ${formattedLines}
                 className="flex-1 bg-white text-black hover:bg-zinc-200 py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded cursor-pointer"
               >
                 Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Dialog Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl p-6 relative animate-fade-in space-y-5 animate-scale-up text-left">
+            <button
+              onClick={() => setShowLogoutConfirm(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h3 className="font-mono text-xs uppercase tracking-widest font-bold text-rose-500 flex items-center space-x-2">
+                <span>⚠️</span>
+                <span>Выход</span>
+              </h3>
+              <p className="text-[11px] text-zinc-400 mt-2 leading-normal font-sans">
+                Вы уверены, что хотите выйти из учетной записи?
+              </p>
+            </div>
+
+            <div className="flex space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded border border-zinc-850 cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLogoutConfirm(false);
+                  handleLogout();
+                }}
+                className="flex-1 bg-rose-650 hover:bg-rose-700 text-white py-2.5 text-[10px] uppercase font-mono tracking-wider font-bold rounded cursor-pointer transition-colors"
+              >
+                Выйти
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View My Profile Dossier Modal */}
+      {showMyProfileModal && (
+        <div className="fixed inset-0 z-[1000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl p-5 relative animate-fade-in space-y-4 animate-scale-up text-left">
+            <button
+              onClick={() => setShowMyProfileModal(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-2">
+                <span>👤</span>
+                <span>Профиль аналитика</span>
+              </h3>
+              <p className="text-[9px] text-zinc-500 font-mono mt-0.5 leading-tight uppercase">
+                Информация об учетной записи
+              </p>
+            </div>
+
+            <div className="p-4 bg-zinc-900/40 border border-zinc-900/60 rounded-lg flex items-center space-x-4">
+              <div
+                className="w-14 h-14 rounded-full border border-zinc-800 shadow-inner flex items-center justify-center font-mono text-lg font-black text-white overflow-hidden shrink-0"
+                style={{ backgroundColor: currentUserAvatarColor }}
+              >
+                {currentUserAvatarUrl ? (
+                  <img src={currentUserAvatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  currentUsername ? currentUsername.slice(0, 2).toUpperCase() : 'AN'
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-mono text-zinc-500 uppercase">Пользователь:</div>
+                <div className="text-sm font-bold text-zinc-200 uppercase tracking-wide truncate">{currentUsername}</div>
+                <div className="text-[8.5px] font-mono text-emerald-500 mt-1 flex items-center">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse" />
+                  В сети
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 border-t border-zinc-900 pt-3 text-[10px] font-mono">
+              <div className="flex justify-between items-center text-zinc-400">
+                <span className="text-zinc-550">Провайдер:</span>
+                <span className="text-zinc-300">Локальный</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-400">
+                <span className="text-zinc-550">Адрес:</span>
+                <span className="text-zinc-300 select-all font-mono text-[9px]">{`${currentUsername?.toLowerCase()}@whiteboard.com`}</span>
+              </div>
+              <div className="flex justify-between items-center text-zinc-400">
+                <span className="text-zinc-550">Количество досок:</span>
+                <span className="text-zinc-300 font-bold">{boards.length}</span>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowMyProfileModal(false)}
+                className="w-full bg-zinc-900 hover:bg-zinc-850 text-zinc-300 py-2 text-[10px] uppercase font-mono tracking-wider font-bold rounded border border-zinc-850 cursor-pointer"
+              >
+                Закрыть
               </button>
             </div>
           </div>

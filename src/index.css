@@ -1,3 +1,79 @@
 @import "tailwindcss";
 @import "maplibre-gl/dist/maplibre-gl.css";
 
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-space: "Space Grotesk", sans-serif;
+}
+
+@layer utilities {
+  /* Glow shadows */
+  .glow-indigo {
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.25), inset 0 0 10px rgba(99, 102, 241, 0.08);
+  }
+  .glow-indigo-strong {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.45), inset 0 0 15px rgba(99, 102, 241, 0.15);
+  }
+  .glow-teal {
+    box-shadow: 0 0 15px rgba(20, 184, 166, 0.25), inset 0 0 10px rgba(20, 184, 166, 0.08);
+  }
+  .glow-red {
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.25), inset 0 0 10px rgba(239, 68, 68, 0.08);
+  }
+  .glow-yellow {
+    box-shadow: 0 0 15px rgba(234, 179, 8, 0.25), inset 0 0 10px rgba(234, 179, 8, 0.08);
+  }
+  
+  /* Text glows */
+  .glow-text-indigo {
+    text-shadow: 0 0 8px rgba(129, 140, 248, 0.5);
+  }
+  .glow-text-teal {
+    text-shadow: 0 0 8px rgba(45, 212, 191, 0.5);
+  }
+  .glow-text-red {
+    text-shadow: 0 0 8px rgba(248, 113, 113, 0.5);
+  }
+
+  /* Scanline animations and noise filters */
+  .terminal-noise {
+    background-image: radial-gradient(rgba(18, 18, 24, 0) 0%, rgba(9, 9, 11, 0.85) 100%),
+                      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-size: auto, 120px 120px;
+    opacity: 0.045;
+  }
+  
+  /* Subtle terminal overlay */
+  .crt-scroller {
+    position: relative;
+  }
+  .crt-scroller::after {
+    content: " ";
+    display: block;
+    position: fixed;
+    top: 0; left: 0; bottom: 0; right: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.18) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.015), rgba(0, 255, 0, 0.005), rgba(0, 0, 255, 0.015));
+    background-size: 100% 3px, 3px 100%;
+    z-index: 9999;
+    pointer-events: none;
+  }
+}
+
+/* Animations declarations */
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.9;
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 22px rgba(99, 102, 241, 0.4);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s infinite ease-in-out;
+}

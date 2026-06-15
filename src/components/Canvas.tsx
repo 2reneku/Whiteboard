@@ -1894,14 +1894,14 @@ export default function Canvas({
                   if (activeTool !== 'pencil') setHoveredNodeId(node.id);
                 }}
                 onMouseLeave={() => setHoveredNodeId(null)}
-                className={`node-card absolute rounded-lg select-none flex flex-col justify-start pointer-events-auto transition-colors duration-150 ${
+                className={`node-card absolute rounded-none select-none flex flex-col justify-start pointer-events-auto transition-colors duration-150 ${
                   node.isBoxed === false
                     ? isSelected
-                      ? 'border border-dashed border-blue-500 bg-zinc-950/20 shadow-none z-30 cursor-move'
+                      ? 'border border-dashed border-indigo-500 bg-zinc-950/25 shadow-none z-30 cursor-move'
                       : 'border border-transparent bg-transparent shadow-none hover:border-zinc-800 cursor-move'
                     : isSelected
-                      ? 'border-2 border-blue-500 bg-[#09090b]/95 text-zinc-100 shadow-[0_0_25px_rgba(59,130,246,0.25)] z-30 cursor-move'
-                      : 'border border-zinc-800 bg-[#09090b]/60 hover:bg-[#09090b]/85 text-zinc-300 hover:border-zinc-600 cursor-move'
+                      ? 'border-2 border-indigo-400 bg-[#07070a]/95 text-zinc-100 shadow-[0_0_25px_rgba(99,102,241,0.35)] z-30 cursor-move glow-indigo'
+                      : 'border border-zinc-800 bg-[#07070a]/80 hover:bg-[#09090b]/95 text-zinc-300 hover:border-zinc-650 cursor-move'
                 }`}
               >
                 {isEditing ? (
@@ -2543,7 +2543,7 @@ export default function Canvas({
               width: `${w}px`,
               height: `${h}px`,
             }}
-            className="absolute border border-dashed border-blue-500 bg-blue-500/10 pointer-events-none z-50 rounded-xs"
+            className="absolute border border-dashed border-indigo-500 bg-indigo-500/10 pointer-events-none z-50 rounded-xs"
           />
         );
       })()}
@@ -2556,7 +2556,7 @@ export default function Canvas({
             top: `${selectionRange.y}px`,
             transform: 'translateX(-50%)',
           }}
-          className="absolute z-150 bg-zinc-950 border border-zinc-805 rounded-xl p-1 px-1.5 shadow-2xl flex items-center space-x-1 backdrop-blur-md animate-fade-in no-deselect pointer-events-auto"
+          className="absolute z-150 bg-zinc-950 border border-zinc-805 rounded-none p-1 px-1.5 shadow-2xl flex items-center space-x-1 backdrop-blur-md animate-fade-in no-deselect pointer-events-auto glow-indigo"
           onMouseDown={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -2566,7 +2566,7 @@ export default function Canvas({
             onClick={() => {
               document.execCommand('bold', false);
             }}
-            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-md font-extrabold text-[10.5px] w-6.5 h-6 ml-0.5 flex items-center justify-center cursor-pointer transition-colors"
+            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-none font-extrabold text-[10.5px] w-6.5 h-6 ml-0.5 flex items-center justify-center cursor-pointer transition-colors"
             title="Жирный"
           >
             B
@@ -2576,7 +2576,7 @@ export default function Canvas({
             onClick={() => {
               document.execCommand('italic', false);
             }}
-            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-md italic text-[11px] w-6.5 h-6 flex items-center justify-center cursor-pointer transition-colors"
+            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-none italic text-[11px] w-6.5 h-6 flex items-center justify-center cursor-pointer transition-colors"
             title="Курсив"
           >
             I
@@ -2586,7 +2586,7 @@ export default function Canvas({
             onClick={() => {
               document.execCommand('underline', false);
             }}
-            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-md underline text-[11px] w-6.5 h-6 flex items-center justify-center cursor-pointer transition-colors"
+            className="p-1 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-none underline text-[11px] w-6.5 h-6 flex items-center justify-center cursor-pointer transition-colors"
             title="Подчеркнутый"
           >
             U
@@ -2607,7 +2607,7 @@ export default function Canvas({
               onClick={() => {
                 document.execCommand('foreColor', false, color.hex);
               }}
-              className="w-3.5 h-3.5 rounded-full cursor-pointer hover:scale-130 transition-all border border-black/55"
+              className="w-3.5 h-3.5 rounded-none cursor-pointer hover:scale-130 transition-all border border-black/55"
               style={{ backgroundColor: color.hex }}
               title={color.label}
             />
@@ -2622,7 +2622,7 @@ export default function Canvas({
             left: `${canvasContextMenu.x}px`,
             top: `${canvasContextMenu.y}px`,
           }}
-          className="absolute z-100 bg-zinc-950 border border-zinc-800 rounded-lg p-1 w-52 shadow-2xl backdrop-blur-md select-none flex flex-col space-y-0.5 font-mono text-xs text-zinc-300 context-menu-wrapper"
+          className="absolute z-100 bg-[#09090b] border border-zinc-800 rounded-none p-1.5 w-52 shadow-2xl backdrop-blur-md select-none flex flex-col space-y-0.5 font-mono text-xs text-zinc-300 context-menu-wrapper glow-indigo"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
@@ -2636,9 +2636,9 @@ export default function Canvas({
               }
               setCanvasContextMenu(null);
             }}
-            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-zinc-900 hover:text-white rounded-md flex items-center space-x-2 text-zinc-100 cursor-pointer"
+            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-zinc-900 hover:text-white rounded-none flex items-center space-x-2 text-zinc-100 cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+            <Plus className="w-3.5 h-3.5 text-zinc-550 shrink-0" />
             <span>Новая карточка</span>
           </button>
 
@@ -2651,9 +2651,9 @@ export default function Canvas({
               }
               setCanvasContextMenu(null);
             }}
-            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-zinc-900 hover:text-white rounded-md flex items-center space-x-2 text-zinc-100 cursor-pointer"
+            className="w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-[#1a1a24] hover:text-white rounded-none flex items-center space-x-2 text-zinc-100 cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+            <Plus className="w-3.5 h-3.5 text-zinc-550 shrink-0" />
             <span>Простой текст</span>
           </button>
         </div>
@@ -2718,14 +2718,14 @@ export default function Canvas({
               left: `${nodeContextMenu.x}px`,
               top: `${nodeContextMenu.y}px`,
             }}
-            className="absolute z-100 bg-zinc-950 border border-zinc-805 rounded-lg p-1.5 w-60 shadow-2xl backdrop-blur-md select-none flex flex-col space-y-0.5 font-mono text-xs text-zinc-300 pointer-events-auto context-menu-wrapper"
+            className="absolute z-100 bg-[#09090b] border border-zinc-800 rounded-none p-1.5 w-60 shadow-2xl backdrop-blur-md select-none flex flex-col space-y-0.5 font-mono text-xs text-zinc-300 pointer-events-auto context-menu-wrapper glow-indigo"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
             <ContextMenuLifecycleTracker />
             <div className="px-2.5 py-1 text-[10px] uppercase font-bold text-zinc-550 border-b border-zinc-900 pb-1 flex items-center justify-between">
               <span>Опции Объекта</span>
-              <span className="text-[9px] text-zinc-400 bg-zinc-850 px-1 py-0.2 rounded font-mono">{node.id.substring(0, 8)}</span>
+              <span className="text-[9px] text-zinc-400 bg-zinc-900 px-1.5 py-0.5 rounded-none border border-zinc-800 font-mono">{node.id.substring(0, 8)}</span>
             </div>
 
             <button
@@ -2735,7 +2735,7 @@ export default function Canvas({
                 }
                 setNodeContextMenu(null);
               }}
-              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-indigo-600 hover:text-white rounded-md flex items-center space-x-2 text-zinc-100 cursor-pointer font-bold"
+              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-indigo-600 hover:text-white rounded-none flex items-center space-x-2 text-zinc-100 cursor-pointer font-bold"
             >
               <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               <span>Запустить проверку OSINT</span>
@@ -2746,7 +2746,7 @@ export default function Canvas({
                 setEditingNodeId(node.id);
                 setNodeContextMenu(null);
               }}
-              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-zinc-900 hover:text-white rounded-md flex items-center space-x-2 text-zinc-100 cursor-pointer"
+              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-zinc-900 hover:text-white rounded-none flex items-center space-x-2 text-zinc-100 cursor-pointer"
             >
               <Edit2 className="w-3.5 h-3.5 text-zinc-550 shrink-0" />
               <span>Редактировать текст</span>
@@ -2757,7 +2757,7 @@ export default function Canvas({
                 onUpdateNode({ ...node, isBoxed: !node.isBoxed });
                 setNodeContextMenu(null);
               }}
-              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-zinc-900 hover:text-white rounded-md flex items-center space-x-2 text-zinc-100 cursor-pointer"
+              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-zinc-900 hover:text-white rounded-none flex items-center space-x-2 text-zinc-100 cursor-pointer"
             >
               <Layout className="w-3.5 h-3.5 text-zinc-550 shrink-0" />
               <span>{node.isBoxed ? 'Переключить в простой текст' : 'Переключить в карточку'}</span>
@@ -2786,7 +2786,7 @@ export default function Canvas({
                     });
                     setNodeContextMenu(null);
                   }}
-                  className="w-4.5 h-4.5 rounded border border-zinc-800 hover:scale-120 transition-transform cursor-pointer"
+                  className="w-4.5 h-4.5 rounded-none border border-zinc-800 hover:scale-120 transition-transform cursor-pointer"
                   style={{ backgroundColor: style.border }}
                 />
               ))}
@@ -2796,27 +2796,27 @@ export default function Canvas({
 
             {/* Cascading Menu Number */}
             <div className="relative group no-deselect">
-              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-md cursor-pointer text-zinc-200">
+              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-none cursor-pointer text-zinc-200">
                 <span>Телефон (Phone)</span>
                 <span className="text-[10px] text-zinc-650">▶</span>
               </div>
-              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-zinc-950 border border-zinc-850 rounded-lg p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto">
+              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-[#09090b] border border-zinc-800 rounded-none p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto glow-teal">
                 <div className="absolute top-0 bottom-0 -left-4 w-4 bg-transparent pointer-events-auto" />
                 <button
                   onClick={() => handleSpawnMenuOSINT('phone', 'hlr', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • HLR Запрос / Статус
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('phone', 'leaks', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Поиск утечек БД
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('phone', 'geo', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Геолокация (Cell ID)
                 </button>
@@ -2825,27 +2825,27 @@ export default function Canvas({
 
             {/* Cascading Menu Mail */}
             <div className="relative group no-deselect">
-              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-md cursor-pointer text-zinc-200">
+              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-none cursor-pointer text-zinc-200">
                 <span>Почта (Email)</span>
                 <span className="text-[10px] text-zinc-650">▶</span>
               </div>
-              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-zinc-950 border border-zinc-850 rounded-lg p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto">
+              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-[#09090b] border border-zinc-800 rounded-none p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto glow-teal">
                 <div className="absolute top-0 bottom-0 -left-4 w-4 bg-transparent pointer-events-auto" />
                 <button
                   onClick={() => handleSpawnMenuOSINT('mail', 'smtp', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Валидация SMTP
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('mail', 'leaks', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Утечки паролей
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('mail', 'social', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Поиск аккаунтов
                 </button>
@@ -2854,33 +2854,33 @@ export default function Canvas({
 
             {/* Cascading Menu Nickname */}
             <div className="relative group no-deselect">
-              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-md cursor-pointer text-zinc-200">
+              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-none cursor-pointer text-zinc-200">
                 <span>Никнейм (Nickname)</span>
                 <span className="text-[10px] text-zinc-650">▶</span>
               </div>
-              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-zinc-950 border border-zinc-850 rounded-lg p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto">
+              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-[#09090b] border border-zinc-800 rounded-none p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto glow-teal">
                 <div className="absolute top-0 bottom-0 -left-4 w-4 bg-transparent pointer-events-auto" />
                 <button
                   onClick={() => handleSpawnMenuOSINT('nickname', 'telegram', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Telegram ID / ЧАТЫ
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('nickname', 'vk', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • ВК / Одноклассники
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('nickname', 'instagram', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Insta Профайл
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('nickname', 'other', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Steam, Discord, LinkedIn
                 </button>
@@ -2889,27 +2889,27 @@ export default function Canvas({
 
             {/* Cascading Menu Net / IP */}
             <div className="relative group no-deselect">
-              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-md cursor-pointer text-zinc-200">
+              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-none cursor-pointer text-zinc-200">
                 <span>Сеть (IP & Domain)</span>
                 <span className="text-[10px] text-zinc-650">▶</span>
               </div>
-              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-zinc-950 border border-zinc-850 rounded-lg p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto">
+              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-[#09090b] border border-zinc-800 rounded-none p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto glow-teal">
                 <div className="absolute top-0 bottom-0 -left-4 w-4 bg-transparent pointer-events-auto" />
                 <button
                   onClick={() => handleSpawnMenuOSINT('ip', 'shodan', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Shodan & Censys
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('ip', 'nmap', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Порты Nmap Scan
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('ip', 'whois', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Записи WHOIS
                 </button>
@@ -2918,27 +2918,27 @@ export default function Canvas({
 
             {/* Cascading Menu Crypto */}
             <div className="relative group no-deselect">
-              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-md cursor-pointer text-zinc-200">
+              <div className="flex items-center justify-between px-2.5 py-1.5 hover:bg-zinc-900 rounded-none cursor-pointer text-zinc-200">
                 <span>Крипто (Wallets)</span>
                 <span className="text-[10px] text-zinc-650">▶</span>
               </div>
-              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-zinc-950 border border-zinc-850 rounded-lg p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto">
+              <div className="absolute left-[95%] -top-1 pl-1.5 w-48 bg-[#09090b] border border-zinc-800 rounded-none p-1 shadow-2xl hidden group-hover:flex flex-col space-y-0.5 z-[160] pointer-events-auto glow-teal">
                 <div className="absolute top-0 bottom-0 -left-4 w-4 bg-transparent pointer-events-auto" />
                 <button
                   onClick={() => handleSpawnMenuOSINT('crypto', 'btc', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Bitcoin Explorer
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('crypto', 'tron', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • TRON / USDT Анализ
                 </button>
                 <button
                   onClick={() => handleSpawnMenuOSINT('crypto', 'eth', node.id)}
-                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 text-[11px] hover:bg-zinc-900 rounded-none text-zinc-300 hover:text-white cursor-pointer"
                 >
                   • Ethereum Смарт-контракты
                 </button>
@@ -2950,7 +2950,7 @@ export default function Canvas({
                 if (onDeleteNode) onDeleteNode(node.id);
                 setNodeContextMenu(null);
               }}
-              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-red-955/40 hover:text-red-400 rounded-md flex items-center space-x-2 text-zinc-100 cursor-pointer border-t border-zinc-900 mt-1"
+              className="w-full text-left px-2.5 py-2 text-[11px] hover:bg-red-955/40 hover:text-red-400 rounded-none flex items-center space-x-2 text-zinc-100 cursor-pointer border-t border-zinc-900 mt-1"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" />
               <span>Удалить карточку</span>
