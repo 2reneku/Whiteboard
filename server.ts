@@ -268,6 +268,26 @@ app.get("/api/auth/logs", (req, res) => {
   res.json({ success: true, logs: maskedLogs });
 });
 
+function validatePassword(password: string): { isValid: boolean, error?: string } {
+  const digits = (password.match(/\d/g) || []).length;
+  if (digits < 6) {
+    return { isValid: false, error: "Пароль должен содержать не менее 6 цифр" };
+  }
+  const hasLower = /[a-zа-яё]/.test(password);
+  if (!hasLower) {
+    return { isValid: false, error: "Пароль должен содержать минимум 1 строчную букву (a-z, а-я)" };
+  }
+  const hasUpper = /[A-ZА-ЯЁ]/.test(password);
+  if (!hasUpper) {
+    return { isValid: false, error: "Пароль должен содержать минимум 1 заглавную букву (A-Z, А-Я)" };
+  }
+  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/.test(password);
+  if (!hasSpecial) {
+    return { isValid: false, error: "Пароль должен содержать минимум 1 специальный символ" };
+  }
+  return { isValid: true };
+}
+
 app.post("/api/auth/register", rateLimiter(15, 60000), (req, res) => {
   const { username, password, rememberDevice } = req.body;
   if (!username || !password) {
@@ -280,8 +300,9 @@ app.post("/api/auth/register", rateLimiter(15, 60000), (req, res) => {
     return res.status(400).json({ error: "Имя (позывной) должно содержать не менее 2 символов" });
   }
 
-  if (password.length < 4) {
-    return res.status(400).json({ error: "Пароль должен быть не менее 4 символов" });
+  const pwCheck = validatePassword(password);
+  if (!pwCheck.isValid) {
+    return res.status(400).json({ error: pwCheck.error });
   }
 
   const db = readDB();
@@ -337,40 +358,11 @@ app.post("/api/auth/login", rateLimiter(20, 60000), (req, res) => {
     (u: any) => u.username && u.username.toLowerCase() === cleanUsername.toLowerCase() && u.password === password
   );
 
-  // Auto-registration fallback if the user is not found in the DB (makes host resets seamless)
-  if (!user && !userExistsAtAll) {
-    if (cleanUsername.length < 2) {
-      return res.status(400).json({ error: "Имя (позывной) должно содержать не менее 2 символов" });
-    }
-    if (password.length < 4) {
-      return res.status(400).json({ error: "Пароль должен быть не менее 4 символов" });
-    }
-
-    const deviceToken = "dev-" + Math.random().toString(36).substring(2) + Date.now().toString(36);
-    const newUser = {
-      username: cleanUsername,
-      password: password,
-      email: `${cleanUsername.toLowerCase()}@whiteboard.com`,
-      avatarUrl: "",
-      avatarColor: "#" + ["3b82f6", "10b981", "f59e0b", "ef4444", "8b5cf6", "ec4899", "06b6d4"][Math.floor(Math.random() * 7)],
-      deviceTokens: rememberDevice ? [deviceToken] : [],
-      createdAt: new Date().toISOString()
-    };
-    db.users.push(newUser);
-    writeDB(db);
-    logAuthEvent(cleanUsername, `Автоматическая регистрация при входе (восстановление учетной записи)`, "SUCCESS", req);
-
-    return res.json({ 
-      success: true, 
-      username: newUser.username,
-      avatarUrl: newUser.avatarUrl,
-      avatarColor: newUser.avatarColor,
-      deviceToken: rememberDevice ? deviceToken : undefined
-    });
-  }
-
   if (!user) {
-    logAuthEvent(cleanUsername, "Неудачная попытка входа: неверные учетные данные", "FAILED", req);
+    logAuthEvent(cleanUsername, "Неудачная попытка входа: неверные учетные данные или пользователь не зарегистрирован", "FAILED", req);
+    if (!userExistsAtAll) {
+      return res.status(401).json({ error: "Пользователь с таким позывным не зарегистрирован" });
+    }
     return res.status(401).json({ error: "Неверный позывной аналитика или пароль" });
   }
 
@@ -401,8 +393,9 @@ app.post("/api/auth/reset-password", rateLimiter(10, 60000), (req, res) => {
   if (!username || !newPassword) {
     return res.status(400).json({ error: "Укажите позывной и новый пароль" });
   }
-  if (newPassword.length < 4) {
-    return res.status(400).json({ error: "Пароль должен быть не менее 4 символов" });
+  const pwCheck = validatePassword(newPassword);
+  if (!pwCheck.isValid) {
+    return res.status(400).json({ error: pwCheck.error });
   }
 
   const cleanUsername = username.trim();

@@ -1608,6 +1608,11 @@ ${formattedLines}
                   value={authPassword}
                   onChange={(e) => setAuthPassword(e.target.value)}
                 />
+                {(authMode === 'register' || authMode === 'reset') && (
+                  <p className="mt-1.5 text-[9px] font-mono leading-relaxed text-zinc-400">
+                    Требования: тип <span className="text-amber-500 font-bold">не менее 6 цифр</span>, <span className="text-amber-500 font-bold">1 строчная</span>, <span className="text-amber-500 font-bold">1 заглавная буква</span> и <span className="text-amber-500 font-bold">1 спецсимвол</span>.
+                  </p>
+                )}
               </div>
 
               {authMode !== 'reset' && (
