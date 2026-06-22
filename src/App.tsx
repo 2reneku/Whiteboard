@@ -25,6 +25,19 @@ interface OSINTBoard {
   roomId?: string;
 }
 
+export const getCleanPlainTextFromHTML = (html: string): string => {
+  if (!html) return '';
+  let text = html.replace(/<[^>]*>/g, ' ');
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  return text.replace(/\s+/g, ' ').trim();
+};
+
 export default function App() {
   // Check for invite link on loading
   const [pendingInvite, setPendingInvite] = useState<{ roomId: string; name: string } | null>(null);
@@ -820,6 +833,43 @@ export default function App() {
   };
 
   const handleUpdateNode = (updated: OSINTNode, skipSync = false) => {
+    const plainText = getCleanPlainTextFromHTML(updated.label).toLowerCase();
+    
+    if (plainText === 'кк бичи') {
+      const singleNodeId = 'node-' + Date.now();
+      const redNode: OSINTNode = {
+        id: singleNodeId,
+        type: 'text',
+        x: 350,
+        y: 200,
+        width: 180,
+        height: 70,
+        label: `<span style="color: #ef4444; font-weight: bold; font-family: var(--font-sans), sans-serif; font-size: 1.15em;">Понятно))))</span>`,
+        fontFamily: 'sans',
+        fontSize: 16,
+        bold: true,
+        textColor: '#ef4444',
+        bgColor: 'rgba(239, 68, 68, 0.08)',
+        borderColor: '#ef4444',
+        isBoxed: true,
+        scale: 1,
+      };
+
+      setNodes([redNode]);
+      setEdges([]);
+      setStrokes([]);
+      setComments([]);
+      
+      setSelectedNodeIds([]);
+      setSelectedStrokeIds([]);
+      setSelectedEdgeId(null);
+
+      if (!skipSync) {
+        pushCollabUpdate([redNode], [], [], []);
+      }
+      return;
+    }
+
     setNodes((prevNodes) => {
       const next = prevNodes.map((n) => (n.id === updated.id ? updated : n));
       if (!skipSync) {

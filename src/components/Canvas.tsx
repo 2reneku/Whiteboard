@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, MouseEvent as ReactMouseEvent } from 'react';
 import { OSINTNode, OSINTEdge, PeerCursor, ThemeColors, BoardStroke, BoardComment } from '../types';
-import { Link2, Trash2, Plus, Sparkles, Edit2, Layout, RotateCw } from 'lucide-react';
+import { Link2, Trash2, Plus, Sparkles, Edit2, Layout, RotateCw, Beer } from 'lucide-react';
 import MapCardNode from './MapCardNode';
 
 export const sanitizeHTML = (html: string): string => {
@@ -16,6 +16,19 @@ export const sanitizeHTML = (html: string): string => {
     clean = clean.replace(regSelf, '');
   });
   return clean;
+};
+
+export const getCleanPlainTextFromHTML = (html: string): string => {
+  if (!html) return '';
+  let text = html.replace(/<[^>]*>/g, ' ');
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  return text.replace(/\s+/g, ' ').trim();
 };
 
 export const getEdgeBorderPoints = (edge: OSINTEdge, from: OSINTNode, to: OSINTNode) => {
@@ -2133,10 +2146,17 @@ export default function Canvas({
                     )}
                   </div>
                 ) : (
-                  <div
-                    className="text-[1em] break-words leading-relaxed whitespace-pre-wrap select-text font-normal [&_p]:m-0 [&_div]:m-0"
-                    dangerouslySetInnerHTML={{ __html: sanitizeHTML(node.label) || "Заметка..." }}
-                  />
+                  getCleanPlainTextFromHTML(node.label).toLowerCase() === 'beer --' ? (
+                    <div className="flex flex-col items-center justify-center p-3 w-full h-full text-amber-500 animate-pulse select-none pointer-events-none">
+                      <Beer className="w-12 h-12 filter drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
+                      <span className="text-[10px] font-mono text-zinc-400 mt-1 uppercase tracking-wider">// CHEERS!</span>
+                    </div>
+                  ) : (
+                    <div
+                      className="text-[1em] break-words leading-relaxed whitespace-pre-wrap select-text font-normal [&_p]:m-0 [&_div]:m-0"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHTML(node.label) || "Заметка..." }}
+                    />
+                  )
                 )}
 
                 {/* Connecting lines link node handle element */}
