@@ -7,6 +7,20 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-space: "Space Grotesk", sans-serif;
+
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
+}
+
+/* Global absolute reset for rounded corners */
+*, *::before, *::after {
+  border-radius: 0px !important;
 }
 
 @layer utilities {

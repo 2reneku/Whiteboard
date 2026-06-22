@@ -1,20 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 
-interface TelemetryNode {
-  id: string;
+interface NetworkParticle {
   x: number;
   y: number;
-  label: string;
-  sub: string;
-  life: number; // 0 to 1
-  maxLife: number;
-  scale: number;
+  vx: number;
+  vy: number;
+  radius: number;
 }
 
 export default function InteractiveBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mouseRef = useRef<{ x: number | null; y: number | null }>({ x: null, y: null });
-  const activeHoverRef = useRef<boolean>(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -27,42 +23,29 @@ export default function InteractiveBackground() {
     let width = window.innerWidth;
     let height = window.innerHeight;
 
-    // Telemetry node repository (pings and packet nodes that fade in/out)
-    let pings: TelemetryNode[] = [];
-    let radarAngle = 0;
-    let scanlineY = 0;
+    // Create a beautiful, subtle set of floating network nodes
+    const particleCount = 45;
+    const particles: NetworkParticle[] = [];
 
-    const labels = [
-      'IPv4: 185.220.101.44',
-      'GEO: 55.7558° N, 37.6173° E',
-      'MAC: 00:1A:2B:3C:4D:5E',
-      'PORT_STATUS: LISTENING',
-      'DNS: tor-exit.relay.net',
-      'PING OK: MS 42',
-      'WHOIS: AS200021 SecureNet',
-      'Subdomain detected: api.internal.org',
-      'SSL Expiry Check: PASS',
-      'BSSID: 80:2a:a8:c2:41:90',
-      'PACKET RECVD: 512B',
-      'GEO: 48.8566° N, 2.3522° E',
-      'GEO: 51.5074° N, 0.1278° W',
-    ];
-
-    const sublabels = [
-      'SYS_UPTIME: 1044h',
-      'SEC_LEVEL: COMPROMISED',
-      'OS_DETECT: Linux x86_64',
-      'NODE_ROUTER: ACTIVE',
-      'SERVICE: HTTPS (443)',
-      'METADATA_EXTRACTED',
-      'CIPHER: TLS_AES_256_GCM',
-    ];
+    const initParticles = () => {
+      particles.length = 0;
+      for (let i = 0; i < particleCount; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.35,
+          vy: (Math.random() - 0.5) * 0.35,
+          radius: 1 + Math.random() * 1.5,
+        });
+      }
+    };
 
     const resizeCanvas = () => {
       width = window.innerWidth;
       height = window.innerHeight;
       canvas.width = width;
       canvas.height = height;
+      initParticles();
     };
 
     window.addEventListener('resize', resizeCanvas);
@@ -71,276 +54,118 @@ export default function InteractiveBackground() {
     const handleMouseMove = (e: MouseEvent) => {
       mouseRef.current.x = e.clientX;
       mouseRef.current.y = e.clientY;
-      activeHoverRef.current = true;
     };
 
     const handleMouseLeave = () => {
       mouseRef.current.x = null;
       mouseRef.current.y = null;
-      activeHoverRef.current = false;
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseleave', handleMouseLeave);
 
-    const spawnPing = () => {
-      if (pings.length > 12) return;
-      const rx = Math.random() * width;
-      const ry = Math.random() * height;
-      
-      const label = labels[Math.floor(Math.random() * labels.length)];
-      const sub = sublabels[Math.floor(Math.random() * sublabels.length)];
-      
-      pings.push({
-        id: Math.random().toString(),
-        x: rx,
-        y: ry,
-        label,
-        sub,
-        life: 1.0,
-        maxLife: 200 + Math.random() * 300, // frames
-        scale: 0.8 + Math.random() * 0.4,
-      });
-    };
-
-    // Pre-populate some pings
-    for (let k = 0; k < 6; k++) {
-      spawnPing();
-      pings[k].life = Math.random(); // random progress
-    }
-
     const animate = () => {
-      // Very slight backdrop persistent paint to clear
-      ctx.fillStyle = '#09090b'; // Matching high-tech zinc-950
+      // Clean deep background color to keep it calm and elegant
+      ctx.fillStyle = '#09090b';
       ctx.fillRect(0, 0, width, height);
 
-      // ────────────────────────────────────────────────────────
-      // 1. DRAW TACTICAL GRID LINES
-      // ────────────────────────────────────────────────────────
-      const gridSize = 80;
       const mX = mouseRef.current.x;
       const mY = mouseRef.current.y;
 
-      ctx.strokeStyle = 'rgba(39, 39, 42, 0.18)'; // Zinc-800 equivalent with very low opacity
+      // 1. DRAW SUBTLE ACCENT GRID ON THE BACKGROUND
+      const gridSize = 64;
+      ctx.strokeStyle = 'rgba(39, 39, 42, 0.15)'; // Zinc-800 equivalent with very low opacity
       ctx.lineWidth = 0.5;
 
       for (let x = 0; x < width; x += gridSize) {
         ctx.beginPath();
-        for (let y = 0; y < height; y += 15) {
-          // Add nice cyber-distortion near the cursor
-          let drawX = x;
-          if (mX !== null && mY !== null) {
-            const dx = x - mX;
-            const dy = y - mY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 220) {
-              const force = (1.0 - dist / 220) * 8;
-              drawX += dx > 0 ? force : -force;
-            }
-          }
-          if (y === 0) ctx.moveTo(drawX, y);
-          else ctx.lineTo(drawX, y);
-        }
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
         ctx.stroke();
       }
 
       for (let y = 0; y < height; y += gridSize) {
         ctx.beginPath();
-        for (let x = 0; x < width; x += 15) {
-          let drawY = y;
-          if (mX !== null && mY !== null) {
-            const dx = x - mX;
-            const dy = y - mY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 220) {
-              const force = (1.0 - dist / 220) * 8;
-              drawY += dy > 0 ? force : -force;
-            }
-          }
-          if (x === 0) ctx.moveTo(x, drawY);
-          else ctx.lineTo(x, drawY);
-        }
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
         ctx.stroke();
       }
 
-      // Add small micro crosses/plus indicators on grid intersections
-      ctx.fillStyle = 'rgba(63, 63, 70, 0.45)'; // Zinc-700
+      // Draw elegant tiny intersections (plus marks)
+      ctx.fillStyle = 'rgba(63, 63, 70, 0.35)'; // Zinc-700
       for (let x = gridSize; x < width; x += gridSize * 2) {
         for (let y = gridSize; y < height; y += gridSize * 2) {
-          // Draw tiny tactical '+' 4px wide
           ctx.fillRect(x - 2, y, 5, 0.5);
           ctx.fillRect(x, y - 2, 0.5, 5);
         }
       }
 
-      // ────────────────────────────────────────────────────────
-      // 2. RADAR ROTATING DEEP RADAR SWEEPER
-      // ────────────────────────────────────────────────────────
-      const radarX = width / 2;
-      const radarY = height / 2;
-      const radarRadius = Math.max(width, height) * 0.45;
-
-      radarAngle += 0.0035;
-
-      ctx.save();
-      ctx.translate(radarX, radarY);
-      
-      // Draw static radar range circles (thin & dashed)
-      ctx.strokeStyle = 'rgba(129, 140, 248, 0.03)'; // soft indigo
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 12]);
-      ctx.beginPath();
-      ctx.arc(0, 0, radarRadius * 0.3, 0, Math.PI * 2);
-      ctx.arc(0, 0, radarRadius * 0.6, 0, Math.PI * 2);
-      ctx.arc(0, 0, radarRadius * 0.9, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]); // Reset dashed lines
-
-      // Draw sweeping sector
-      const gradient = ctx.createRadialGradient(0, 0, 10, 0, 0, radarRadius);
-      gradient.addColorStop(0, 'rgba(129, 140, 248, 0.04)');
-      gradient.addColorStop(0.5, 'rgba(129, 140, 248, 0.015)');
-      gradient.addColorStop(1, 'rgba(129, 140, 248, 0.0)');
-
-      // Custom swept arc sector
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radarRadius, radarAngle, radarAngle + 0.38, false);
-      ctx.lineTo(0, 0);
-      ctx.fill();
-
-      // Sharp line at leading edge of sweep with micro glowing line
-      ctx.strokeStyle = 'rgba(129, 140, 248, 0.08)';
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(Math.cos(radarAngle + 0.38) * radarRadius, Math.sin(radarAngle + 0.38) * radarRadius);
-      ctx.stroke();
-
-      ctx.restore();
-
-      // ────────────────────────────────────────────────────────
-      // 3. CURSOR SONAR / INTERACTIVE GLOW RING
-      // ────────────────────────────────────────────────────────
+      // 2. DRAW LUXURIOUS MOUSE LIGHT GLOW
       if (mX !== null && mY !== null) {
-        // Draw interactive concentric target reticle
-        ctx.strokeStyle = 'rgba(99, 102, 241, 0.15)'; // glowing indigo
-        ctx.lineWidth = 0.5;
-        
-        // Inner circle
+        const glowRadius = 240;
+        const radialGlow = ctx.createRadialGradient(mX, mY, 10, mX, mY, glowRadius);
+        radialGlow.addColorStop(0, 'rgba(99, 102, 241, 0.06)');
+        radialGlow.addColorStop(0.5, 'rgba(99, 102, 241, 0.02)');
+        radialGlow.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+        ctx.fillStyle = radialGlow;
         ctx.beginPath();
-        ctx.arc(mX, mY, 12, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // Outer corner crop marks
-        const size = 6;
-        const off = 16;
-        ctx.strokeStyle = 'rgba(99, 102, 241, 0.3)';
-        ctx.lineWidth = 0.8;
-
-        // Top-left
-        ctx.beginPath();
-        ctx.moveTo(mX - off, mY - off + size);
-        ctx.lineTo(mX - off, mY - off);
-        ctx.lineTo(mX - off + size, mY - off);
-        ctx.stroke();
-
-        // Top-right
-        ctx.beginPath();
-        ctx.moveTo(mX + off, mY - off + size);
-        ctx.lineTo(mX + off, mY - off);
-        ctx.lineTo(mX + off - size, mY - off);
-        ctx.stroke();
-
-        // Bottom-left
-        ctx.beginPath();
-        ctx.moveTo(mX - off, mY + off - size);
-        ctx.lineTo(mX - off, mY + off);
-        ctx.lineTo(mX - off + size, mY + off);
-        ctx.stroke();
-
-        // Bottom-right
-        ctx.beginPath();
-        ctx.moveTo(mX + off, mY + off - size);
-        ctx.lineTo(mX + off, mY + off);
-        ctx.lineTo(mX + off - size, mY + off);
-        ctx.stroke();
-
-        // Little coordinate string printed under cursor
-        ctx.fillStyle = 'rgba(99, 102, 241, 0.45)';
-        ctx.font = '6.5px "JetBrains Mono", monospace';
-        ctx.fillText(`LOC: ${Math.floor(mX)}, ${Math.floor(mY)}`, mX + 22, mY + 3);
+        ctx.arc(mX, mY, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
       }
 
-      // Chance to spawn telemetry nodes
-      if (Math.random() < 0.007) {
-        spawnPing();
-      }
+      // 3. UPDATE & DRAW NETWORK PARTICLES & CONNECTOR MESH
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
 
-      // ────────────────────────────────────────────────────────
-      // 4. DRAW SYSTEM TELEMETRY NODES (PINGS & PACKETS)
-      // ────────────────────────────────────────────────────────
-      pings = pings.filter(p => {
-        p.life -= 1 / p.maxLife;
-        if (p.life <= 0) return false;
+        // Slowly float particles
+        p.x += p.vx;
+        p.y += p.vy;
 
-        const alpha = Math.sin(p.life * Math.PI) * 0.45; // custom bell curve transition
-        const size = p.scale * 3.5;
+        // Bounce back from walls with a soft pad
+        if (p.x < 0 || p.x > width) p.vx *= -1;
+        if (p.y < 0 || p.y > height) p.vy *= -1;
 
-        // Draw crosshair indicator
-        ctx.strokeStyle = `rgba(129, 140, 248, ${alpha})`;
-        ctx.lineWidth = 0.5;
-        
+        // Keep inside bounds just in case of viewport shrink
+        p.x = Math.max(0, Math.min(width, p.x));
+        p.y = Math.max(0, Math.min(height, p.y));
+
+        // Interaction with mouse: gently attract or push
+        if (mX !== null && mY !== null) {
+          const dx = p.x - mX;
+          const dy = p.y - mY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 180) {
+            const force = (1.0 - dist / 180) * 0.15;
+            // nudge slightly closer in an atmospheric drift
+            p.x -= (dx / dist) * force;
+            p.y -= (dy / dist) * force;
+          }
+        }
+
+        // Draw particle dot
+        ctx.fillStyle = 'rgba(129, 140, 248, 0.25)'; // delicate indigo tint
         ctx.beginPath();
-        ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.fillStyle = `rgba(129, 140, 248, ${alpha})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 1, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fill();
 
-        // Concentric expand sonar ripple rings
-        const rippleRad = (1.0 - p.life) * 45;
-        ctx.strokeStyle = `rgba(99, 102, 241, ${alpha * 0.4 * (1.0 - p.life)})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, rippleRad, 0, Math.PI * 2);
-        ctx.stroke();
+        // Check proximity to other particles and draw fine connecting lines
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const dx = p.x - p2.x;
+          const dy = p.y - p2.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Draw HUD lines and tags
-        ctx.strokeStyle = `rgba(129, 140, 248, ${alpha * 0.4})`;
-        ctx.beginPath();
-        ctx.moveTo(p.x + size, p.y - size);
-        ctx.lineTo(p.x + size + 10, p.y - size - 10);
-        ctx.lineTo(p.x + size + 90, p.y - size - 10);
-        ctx.stroke();
-
-        // Text telemetry logs
-        ctx.fillStyle = `rgba(165, 180, 252, ${alpha * 0.9})`; // Indigo text
-        ctx.font = '7px "JetBrains Mono", monospace';
-        ctx.fillText(p.label, p.x + size + 14, p.y - size - 16);
-
-        ctx.fillStyle = `rgba(161, 161, 170, ${alpha * 0.65})`; // Zinc dark subtext
-        ctx.font = '6px "JetBrains Mono", monospace';
-        ctx.fillText(p.sub, p.x + size + 14, p.y - size - 6);
-
-        return true;
-      });
-
-      // ────────────────────────────────────────────────────────
-      // 5. SUBTLE SCANLINE OVERLAY EFFECT
-      // ────────────────────────────────────────────────────────
-      scanlineY = (scanlineY + 1.2) % height;
-      
-      // Moving CRT laser scanline
-      const scanGradient = ctx.createLinearGradient(0, scanlineY - 45, 0, scanlineY + 45);
-      scanGradient.addColorStop(0, 'rgba(129, 140, 248, 0.0)');
-      scanGradient.addColorStop(0.5, 'rgba(129, 140, 248, 0.012)');
-      scanGradient.addColorStop(1, 'rgba(129, 140, 248, 0.0)');
-      
-      ctx.fillStyle = scanGradient;
-      ctx.fillRect(0, scanlineY - 45, width, 90);
+          if (dist < 130) {
+            const alpha = (1.0 - dist / 130) * 0.12;
+            ctx.strokeStyle = `rgba(129, 140, 248, ${alpha})`;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+      }
 
       animationId = requestAnimationFrame(animate);
     };

@@ -2285,20 +2285,7 @@ ${formattedLines}
             </button>
           )}
 
-          <div className="w-px h-4.5 bg-zinc-800" />
 
-          {/* AI Guardian summary analyzer */}
-          <button
-            onClick={() => setShowAI(!showAI)}
-            className={`font-mono text-[10px] uppercase tracking-wider font-bold py-1 px-2.5 rounded flex items-center cursor-pointer transition-all ${
-              showAI
-                ? 'bg-zinc-100 text-zinc-950 shadow'
-                : 'bg-zinc-900/70 hover:bg-zinc-850 text-zinc-300 border border-zinc-80d hover:border-zinc-700'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 mr-1 text-indigo-400" />
-            AI Аналитик
-          </button>
 
           <button
             onClick={handleExportJSON}

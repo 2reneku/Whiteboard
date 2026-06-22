@@ -202,6 +202,7 @@ export default function Canvas({
   interface AlignmentGuide {
     type: 'h' | 'v';
     coord: number;
+    isCenter?: boolean;
   }
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
 
@@ -667,8 +668,8 @@ export default function Canvas({
     }
 
     // 3. GENERATION OF ALIGNED GUIDES BASED ON FINAL SNAPPED VALUE
-    const matchedCoordsX = new Set<number>();
-    const matchedCoordsY = new Set<number>();
+    const matchedCoordsX = new Map<number, boolean>();
+    const matchedCoordsY = new Map<number, boolean>();
 
     otherNodes.forEach(other => {
       const otherL = other.x;
@@ -687,21 +688,21 @@ export default function Canvas({
       const activeCY = tentativeY + h / 2;
       const activeB = tentativeY + h;
 
-      if (Math.abs(activeL - otherL) < 1.1) matchedCoordsX.add(otherL);
-      if (Math.abs(activeCX - otherCX) < 1.1) matchedCoordsX.add(otherCX);
-      if (Math.abs(activeR - otherR) < 1.1) matchedCoordsX.add(otherR);
-      if (Math.abs(activeL - otherR) < 1.1) matchedCoordsX.add(otherR);
-      if (Math.abs(activeR - otherL) < 1.1) matchedCoordsX.add(otherL);
+      if (Math.abs(activeL - otherL) < 1.1) matchedCoordsX.set(otherL, matchedCoordsX.get(otherL) || false);
+      if (Math.abs(activeCX - otherCX) < 1.1) matchedCoordsX.set(otherCX, true);
+      if (Math.abs(activeR - otherR) < 1.1) matchedCoordsX.set(otherR, matchedCoordsX.get(otherR) || false);
+      if (Math.abs(activeL - otherR) < 1.1) matchedCoordsX.set(otherR, matchedCoordsX.get(otherR) || false);
+      if (Math.abs(activeR - otherL) < 1.1) matchedCoordsX.set(otherL, matchedCoordsX.get(otherL) || false);
 
-      if (Math.abs(activeT - otherT) < 1.1) matchedCoordsY.add(otherT);
-      if (Math.abs(activeCY - otherCY) < 1.1) matchedCoordsY.add(otherCY);
-      if (Math.abs(activeB - otherB) < 1.1) matchedCoordsY.add(otherB);
-      if (Math.abs(activeT - otherB) < 1.1) matchedCoordsY.add(otherB);
-      if (Math.abs(activeB - otherT) < 1.1) matchedCoordsY.add(otherT);
+      if (Math.abs(activeT - otherT) < 1.1) matchedCoordsY.set(otherT, matchedCoordsY.get(otherT) || false);
+      if (Math.abs(activeCY - otherCY) < 1.1) matchedCoordsY.set(otherCY, true);
+      if (Math.abs(activeB - otherB) < 1.1) matchedCoordsY.set(otherB, matchedCoordsY.get(otherB) || false);
+      if (Math.abs(activeT - otherB) < 1.1) matchedCoordsY.set(otherB, matchedCoordsY.get(otherB) || false);
+      if (Math.abs(activeB - otherT) < 1.1) matchedCoordsY.set(otherT, matchedCoordsY.get(otherT) || false);
     });
 
-    matchedCoordsX.forEach(coord => guides.push({ type: 'v', coord }));
-    matchedCoordsY.forEach(coord => guides.push({ type: 'h', coord }));
+    matchedCoordsX.forEach((isCtr, coord) => guides.push({ type: 'v', coord, isCenter: isCtr }));
+    matchedCoordsY.forEach((isCtr, coord) => guides.push({ type: 'h', coord, isCenter: isCtr }));
 
     return {
       snappedDX: tentativeX - activeInitial.x,
@@ -1433,33 +1434,67 @@ export default function Canvas({
 
           {/* Smart Aligning Figma/Photoshop Guides rendering */}
           {alignmentGuides.map((guide, idx) => {
+            const strokeColor = guide.isCenter ? '#06b6d4' : '#ec4899';
+            const strokeWidth = guide.isCenter ? '1.5' : '1.25';
+            const dashArray = guide.isCenter ? '6,3' : '4,4';
+
             if (guide.type === 'v') {
               return (
-                <line
-                  key={`smart-guide-v-${idx}`}
-                  x1={guide.coord}
-                  y1={-30000}
-                  x2={guide.coord}
-                  y2={30000}
-                  stroke="#ec4899" /* Professional vibrant pink alignment smart color */
-                  strokeWidth="1.25"
-                  strokeDasharray="4,4"
-                  className="pointer-events-none"
-                />
+                <g key={`smart-guide-v-group-${idx}`}>
+                  <line
+                    key={`smart-guide-v-${idx}`}
+                    x1={guide.coord}
+                    y1={-30000}
+                    x2={guide.coord}
+                    y2={30000}
+                    stroke={strokeColor}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={dashArray}
+                    className="pointer-events-none"
+                  />
+                  {guide.isCenter && (
+                    <text
+                      x={guide.coord + 8}
+                      y={-1000} // A high standard offset, or we can just render the clean line or let it shine
+                      fill="#06b6d4"
+                      fontSize="9"
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      className="pointer-events-none opacity-80"
+                    >
+                      CENTER X
+                    </text>
+                  )}
+                </g>
               );
             } else {
               return (
-                <line
-                  key={`smart-guide-h-${idx}`}
-                  x1={-30000}
-                  y1={guide.coord}
-                  x2={30000}
-                  y2={guide.coord}
-                  stroke="#ec4899"
-                  strokeWidth="1.25"
-                  strokeDasharray="4,4"
-                  className="pointer-events-none"
-                />
+                <g key={`smart-guide-h-group-${idx}`}>
+                  <line
+                    key={`smart-guide-h-${idx}`}
+                    x1={-30000}
+                    y1={guide.coord}
+                    x2={30000}
+                    y2={guide.coord}
+                    stroke={strokeColor}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={dashArray}
+                    className="pointer-events-none"
+                  />
+                  {guide.isCenter && (
+                    <text
+                      x={-1000}
+                      y={guide.coord - 8}
+                      fill="#06b6d4"
+                      fontSize="9"
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      className="pointer-events-none opacity-80"
+                    >
+                      CENTER Y
+                    </text>
+                  )}
+                </g>
               );
             }
           })}
@@ -2238,6 +2273,23 @@ export default function Canvas({
                       title="Провести линию связи"
                     />
                   </>
+                )}
+
+                {/* Visual center indicator for center-to-center alignments */}
+                {!isEditing && (
+                  <div
+                    className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none z-35 transition-all duration-150 ${
+                      isSelected || isHovered || draggedNodeId === node.id
+                        ? 'opacity-90 scale-110'
+                        : 'opacity-30 scale-100'
+                    }`}
+                    title="Географический центр блока"
+                  >
+                    {/* Minimalist central crosshair target with zero border-radius */}
+                    <div className="w-1.5 h-1.5 bg-indigo-400 border border-zinc-950 shadow-sm" style={{ borderRadius: '0px' }} />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[11px] h-[1px] bg-indigo-400/50" />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[11px] w-[1px] bg-indigo-400/50" />
+                  </div>
                 )}
               </div>
             );

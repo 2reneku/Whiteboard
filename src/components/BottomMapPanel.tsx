@@ -299,26 +299,26 @@ export default function BottomMapPanel({ onAddMapCard }: BottomMapPanelProps) {
     }
   };
 
-  if (!isOpen) {
-    return (
-      <button
-        onClick={() => setIsOpen(true)}
-        id="open-map-trigger-btn"
-        className="absolute bottom-4 left-4 z-[99] bg-zinc-950 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-100 px-3 py-1.5 rounded-none border border-zinc-850 hover:border-zinc-700 hover:glow-indigo transition-all shadow-xl flex items-center space-x-1.5 font-mono text-[11px] cursor-pointer"
-      >
-        <span>🗺️</span>
-        <span>Открыть карту</span>
-      </button>
-    );
-  }
-
   return (
     <div 
-      className="absolute bottom-4 left-4 w-[calc(100vw-32px)] sm:w-[400px] h-[265px] bg-[#09090b] border border-zinc-800 z-[99] flex flex-col rounded-none shadow-2xl overflow-hidden transition-all duration-300 glow-indigo-strong"
+      className={`absolute bottom-0 left-0 w-full bg-[#09090b] border-t border-zinc-850 z-[99] flex flex-col transition-all duration-300 ${
+        isOpen 
+          ? 'h-[320px] shadow-2xl glow-indigo-strong opacity-100' 
+          : 'h-0 opacity-100'
+      }`}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* MAP BODY VIEWPANEL (no heavy title header, clean interface) */}
-      <div className="flex-1 min-h-0 relative w-full h-full">
+      {/* Minimalistic выдвижная стрелочка toggle button matching standard menus */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="absolute left-1/2 -translate-x-1/2 -top-4 w-12 h-4 bg-zinc-950 border border-zinc-800 border-b-0 hover:bg-zinc-900 text-zinc-400 hover:text-zinc-100 flex items-center justify-center cursor-pointer z-[100] transition-colors shadow-lg font-mono text-[9px] select-none rounded-t-sm pointer-events-auto"
+        title={isOpen ? 'Свернуть карту' : 'Открыть карту'}
+      >
+        {isOpen ? '▼' : '▲'}
+      </button>
+
+      {/* Slide visibility wrapper */}
+      <div className={`flex-1 min-h-0 relative w-full h-full transition-opacity duration-200 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
         {/* MAP CANVAS DIV */}
         <div id={mapContainerId} className="w-full h-full text-zinc-900 z-10" />
 
@@ -388,20 +388,12 @@ export default function BottomMapPanel({ onAddMapCard }: BottomMapPanelProps) {
               }
             }}
             className={`flex items-center space-x-1 px-1.5 py-0.5 rounded-none font-mono text-[9px] transition-all duration-155 border cursor-pointer select-none ${
-              is3DEnabled 
+               is3DEnabled 
                 ? 'bg-indigo-950/90 border-indigo-700 text-indigo-400 font-bold glow-indigo' 
                 : 'bg-zinc-900 border-zinc-800 text-zinc-500 hover:text-zinc-350 hover:border-zinc-700'
             }`}
           >
             <span className="glow-text-indigo">3D</span>
-          </button>
-
-          <button
-            onClick={() => setIsOpen(false)}
-            title="Свернуть карту"
-            className="px-1.5 py-0.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-800 hover:border-zinc-700 rounded-none transition-all cursor-pointer font-mono text-[9px]"
-          >
-            Свернуть
           </button>
         </div>
       </div>
