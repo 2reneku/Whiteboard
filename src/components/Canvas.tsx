@@ -3,6 +3,21 @@ import { OSINTNode, OSINTEdge, PeerCursor, ThemeColors, BoardStroke, BoardCommen
 import { Link2, Trash2, Plus, Sparkles, Edit2, Layout, RotateCw } from 'lucide-react';
 import MapCardNode from './MapCardNode';
 
+export const sanitizeHTML = (html: string): string => {
+  if (!html) return '';
+  let clean = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  clean = clean.replace(/\bon[a-zA-Z]+\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, '');
+  clean = clean.replace(/\b(href|src|background)\s*=\s*(?:'javascript:[^']*'|"javascript:[^"]*"|javascript:[^\s>]+)/gi, '');
+  const badTags = ['iframe', 'embed', 'object', 'style', 'meta', 'link'];
+  badTags.forEach(tag => {
+    const reg = new RegExp(`<${tag}\\b[^>]*>(.*?)<\/${tag}>`, 'gi');
+    clean = clean.replace(reg, '');
+    const regSelf = new RegExp(`<${tag}\\b[^>]*\/?>`, 'gi');
+    clean = clean.replace(regSelf, '');
+  });
+  return clean;
+};
+
 export const getEdgeBorderPoints = (edge: OSINTEdge, from: OSINTNode, to: OSINTNode) => {
   const getSidePoint = (node: OSINTNode, side: string) => {
     switch (side) {
@@ -1935,7 +1950,7 @@ export default function Canvas({
                       ? 'border border-dashed border-indigo-500 bg-zinc-950/25 shadow-none z-30 cursor-move'
                       : 'border border-transparent bg-transparent shadow-none hover:border-zinc-800 cursor-move'
                     : isSelected
-                      ? 'border-2 border-indigo-400 bg-[#07070a]/95 text-zinc-100 shadow-[0_0_25px_rgba(99,102,241,0.35)] z-30 cursor-move glow-indigo'
+                      ? 'border-2 border-indigo-400 bg-[#07070a]/95 text-zinc-100 shadow-xl z-30 cursor-move'
                       : 'border border-zinc-800 bg-[#07070a]/80 hover:bg-[#09090b]/95 text-zinc-300 hover:border-zinc-650 cursor-move'
                 }`}
               >
@@ -2120,7 +2135,7 @@ export default function Canvas({
                 ) : (
                   <div
                     className="text-[1em] break-words leading-relaxed whitespace-pre-wrap select-text font-normal [&_p]:m-0 [&_div]:m-0"
-                    dangerouslySetInnerHTML={{ __html: node.label || "Заметка..." }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHTML(node.label) || "Заметка..." }}
                   />
                 )}
 
@@ -2275,22 +2290,7 @@ export default function Canvas({
                   </>
                 )}
 
-                {/* Visual center indicator for center-to-center alignments */}
-                {!isEditing && (
-                  <div
-                    className={`absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none select-none z-35 transition-all duration-150 ${
-                      isSelected || isHovered || draggedNodeId === node.id
-                        ? 'opacity-90 scale-110'
-                        : 'opacity-30 scale-100'
-                    }`}
-                    title="Географический центр блока"
-                  >
-                    {/* Minimalist central crosshair target with zero border-radius */}
-                    <div className="w-1.5 h-1.5 bg-indigo-400 border border-zinc-950 shadow-sm" style={{ borderRadius: '0px' }} />
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[11px] h-[1px] bg-indigo-400/50" />
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-[11px] w-[1px] bg-indigo-400/50" />
-                  </div>
-                )}
+
               </div>
             );
           })}

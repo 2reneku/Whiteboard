@@ -1318,11 +1318,88 @@ ${formattedLines}
   };
 
   const handleExportJSON = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ nodes, edges, strokes, comments }, null, 2));
+    const activeBoard = boards.find(b => b.id === currentBoardId);
+    const boardName = activeBoard ? activeBoard.name : 'Визуализация';
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ name: boardName, nodes, edges, strokes, comments }, null, 2));
     const dlAnchorElem = document.createElement('a');
     dlAnchorElem.setAttribute("href", dataStr);
     dlAnchorElem.setAttribute("download", `whiteboard_export_${currentBoardId || 'board'}.json`);
     dlAnchorElem.click();
+  };
+
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileReader = new FileReader();
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    fileReader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        
+        if (!parsed || !Array.isArray(parsed.nodes)) {
+          setToastNotification({
+            message: 'Ошибка: Неверный формат файла импорта.',
+            type: 'info'
+          });
+          setTimeout(() => setToastNotification(null), 3500);
+          return;
+        }
+
+        const importedNodes = parsed.nodes || [];
+        const importedEdges = parsed.edges || [];
+        const importedStrokes = parsed.strokes || [];
+        const importedComments = parsed.comments || [];
+
+        const baseName = parsed.name || `Импортированный проект`;
+        const newName = `${baseName} (imported)`;
+
+        if (!currentUsername) return;
+        const newId = 'board-' + Date.now();
+        
+        const newBoard: OSINTBoard = {
+          id: newId,
+          name: newName,
+          nodes: importedNodes,
+          edges: importedEdges,
+          strokes: importedStrokes,
+          comments: importedComments,
+          updatedAt: Date.now(),
+        };
+
+        const nextList = [...boards, newBoard];
+        setBoards(nextList);
+        localStorage.setItem(`whiteboard_boards_${currentUsername}`, JSON.stringify(nextList));
+
+        // Switch active board state to the loaded imported board
+        setCurrentBoardId(newId);
+        setNodes(importedNodes);
+        setEdges(importedEdges);
+        setStrokes(importedStrokes);
+        setComments(importedComments);
+
+        setSelectedNodeIds([]);
+        setSelectedStrokeIds([]);
+        setSelectedEdgeId(null);
+        setHistory([]);
+
+        handleDisconnectCollab();
+
+        setToastNotification({
+          message: `Визуализация успешно импортирована: "${newName}"!`,
+          type: 'success'
+        });
+        setTimeout(() => setToastNotification(null), 3500);
+      } catch (err) {
+        setToastNotification({
+          message: 'Ошибка при чтении или разборе JSON файла',
+          type: 'info'
+        });
+        setTimeout(() => setToastNotification(null), 3500);
+      }
+    };
+
+    fileReader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleGraphAutoLayout = () => {
@@ -2290,9 +2367,23 @@ ${formattedLines}
           <button
             onClick={handleExportJSON}
             className="bg-zinc-900 hover:bg-zinc-850 border border-zinc-850 py-1 px-2.5 rounded text-[10px] uppercase font-mono tracking-wider font-bold text-zinc-400 hover:text-zinc-200 cursor-pointer"
+            title="Экспортировать текущую визуализацию в JSON файл"
           >
             Export
           </button>
+
+          <label 
+            className="bg-zinc-900 hover:bg-zinc-850 border border-zinc-850 py-1 px-2.5 rounded text-[10px] uppercase font-mono tracking-wider font-bold text-zinc-400 hover:text-zinc-200 cursor-pointer flex items-center select-none"
+            title="Импортировать ранее выгруженную визуализацию как отдельную доску"
+          >
+            <span>Import</span>
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleImportJSON}
+              className="hidden"
+            />
+          </label>
 
           <div className="relative">
             <button

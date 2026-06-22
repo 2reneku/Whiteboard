@@ -17,9 +17,131 @@ app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  
+  // Extra Production-Grade Security Headers
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; img-src * data: blob: referrerPolicy;");
   next();
 });
 app.use(express.json());
+
+// ──────────────────────────────────────────────────────── SECURITY MIDDLEWARES & DEFENSE ENGINE
+
+// Rate Limit State Store
+const rateLimitStore: Record<string, { count: number; resetTime: number }> = {};
+
+function rateLimiter(maxRequests: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const forwarded = req.headers["x-forwarded-for"];
+    const clientIP = forwarded
+      ? (Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0].trim())
+      : req.socket.remoteAddress || "127.0.0.1";
+      
+    const key = `${req.path}_${clientIP}`;
+    const now = Date.now();
+    
+    if (!rateLimitStore[key] || now > rateLimitStore[key].resetTime) {
+      rateLimitStore[key] = {
+        count: 1,
+        resetTime: now + windowMs
+      };
+      return next();
+    }
+    
+    rateLimitStore[key].count++;
+    if (rateLimitStore[key].count > maxRequests) {
+      console.warn(`[SECURITY-BLOCK] Rate limit exceeded for client: ${clientIP} at path ${req.path}`);
+      return res.status(429).json({
+        success: false,
+        error: "Превышен лимит запросов безопасности. Пожалуйста, подождите некоторое время."
+      });
+    }
+    
+    next();
+  };
+}
+
+// SQLi Prevention Detector
+function hasSQLiSignature(val: string): boolean {
+  const sqliPatterns = [
+    /('|")\s*(OR|AND)\s*('|")?\s*\d+\s*=\s*\d+/i,
+    /('|")\s*(OR|AND)\s*('|")?[a-zA-Z]+\b('|")?\s*=\s*('|")?[a-zA-Z]+/i,
+    /UNION\s+(ALL\s+)?SELECT/i,
+    /;\s*(DROP|ALTER|DELETE|UPDATE|INSERT)\s+/i,
+    /(--\s*$)|(\/\*[\s\S]*?\*\/)/
+  ];
+  return sqliPatterns.some(pattern => pattern.test(val));
+}
+
+// Deep Object Traversal and Sanitizer
+function sanitizeValue(val: any): any {
+  if (typeof val === "string") {
+    // Sanitize markup, safeguarding contentEditable and other text components from XSS
+    let cleaned = val
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+      .replace(/\bon[a-zA-Z]+\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, "")
+      .replace(/\bjavascript:\s*[^\s^;^"]*/gi, "");
+
+    // SQL Injection pattern detector and defuser
+    if (hasSQLiSignature(cleaned)) {
+      console.warn(`[SECURITY-WARN] SQL Injection signature neutralized: "${cleaned}"`);
+      cleaned = cleaned
+        .replace(/--/g, "")
+        .replace(/\/\*/g, "")
+        .replace(/\*\//g, "")
+        .replace(/UNION\s+(ALL\s+)?SELECT/gi, "UNION-DEFUSED");
+    }
+    return cleaned;
+  }
+  
+  if (Array.isArray(val)) {
+    return val.map(v => sanitizeValue(v));
+  }
+  
+  if (val !== null && typeof val === "object") {
+    const cleanObj: Record<string, any> = {};
+    for (const key in val) {
+      if (Object.prototype.hasOwnProperty.call(val, key)) {
+        // Prototype Pollution Filter
+        if (key === "__proto__" || key === "constructor" || key === "prototype") {
+          console.warn(`[SECURITY-WARN] Prototype pollution attempt blocked: "${key}"`);
+          continue;
+        }
+        cleanObj[key] = sanitizeValue(val[key]);
+      }
+    }
+    return cleanObj;
+  }
+  
+  return val;
+}
+
+// Global Security Inspection Interceptor
+app.use((req, res, next) => {
+  if (req.params) {
+    for (const key in req.params) {
+      const val = req.params[key];
+      if (val && typeof val === "string" && (val.includes("__proto__") || val.includes("constructor") || val.includes("prototype") || val.includes(".."))) {
+        console.warn(`[SECURITY-BLOCK] Malicious parameter detected in param "${key}": "${val}"`);
+        return res.status(400).json({ success: false, error: "Недопустимые параметры безопасности." });
+      }
+    }
+  }
+
+  if (req.body && typeof req.body === "object") {
+    try {
+      req.body = sanitizeValue(req.body);
+    } catch (err) {
+      console.error("[SECURITY-ERR] Request sanitization failed:", err);
+      return res.status(400).json({ success: false, error: "Параметры запроса не прошли валидацию безопасности." });
+    }
+  }
+
+  next();
+});
 
 // ──────────────────────────────────────────────────────── LAZY GEMINI SETUP
 let ai: GoogleGenAI | null = null;
@@ -146,7 +268,7 @@ app.get("/api/auth/logs", (req, res) => {
   res.json({ success: true, logs: maskedLogs });
 });
 
-app.post("/api/auth/register", (req, res) => {
+app.post("/api/auth/register", rateLimiter(15, 60000), (req, res) => {
   const { username, password, rememberDevice } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Пожалуйста, заполните Имя (развед-позывной) и Пароль" });
@@ -196,7 +318,7 @@ app.post("/api/auth/register", (req, res) => {
   });
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", rateLimiter(20, 60000), (req, res) => {
   const { username, password, rememberDevice } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: "Введите развед-позывной и пароль" });
@@ -274,7 +396,7 @@ app.post("/api/auth/login", (req, res) => {
   });
 });
 
-app.post("/api/auth/reset-password", (req, res) => {
+app.post("/api/auth/reset-password", rateLimiter(10, 60000), (req, res) => {
   const { username, newPassword } = req.body;
   if (!username || !newPassword) {
     return res.status(400).json({ error: "Укажите позывной и новый пароль" });
@@ -530,7 +652,7 @@ app.post("/api/collab/:roomId/comment", (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────── REAL OSINT LOOKUP ENGINE API
-app.post("/api/osint/lookup", async (req, res) => {
+app.post("/api/osint/lookup", rateLimiter(30, 60000), async (req, res) => {
   const { type, subtype, target } = req.body;
   if (!target) {
     return res.status(400).json({ success: false, error: "Цель поиска пуста." });
