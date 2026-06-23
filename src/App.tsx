@@ -941,6 +941,12 @@ export default function App() {
       body: JSON.stringify(payload)
     })
       .then(async (res) => {
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const text = await res.text();
+          const cleanSnippet = text.slice(0, 120).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+          throw new Error(`Ответ сервера не в формате JSON (Код: ${res.status}). Проверьте настройки прокси/маршрутизации API. Текст: ${cleanSnippet || 'Пустой ответ'}`);
+        }
         const data = await res.json();
         if (!res.ok || data.success === false) {
           throw new Error(data.error || 'Inquiry timed out.');
@@ -1005,11 +1011,11 @@ ${formattedLines}
       })
       .catch((err) => {
         const errMsg = err.message || 'Error occurred';
-        const formattedErr = errMsg.length > 20 ? errMsg.slice(0, 18) + '..' : errMsg;
+        const formattedErr = errMsg.length > 200 ? errMsg.slice(0, 197) + '...' : errMsg;
         const errorContent = `
-<div style="font-family: var(--font-mono), monospace; font-size: 8.5px; text-align: left; line-height: 1.25; color: #f87171; pointer-events: none; user-select: none;">
+<div style="font-family: var(--font-mono), monospace; font-size: 8.5px; text-align: left; line-height: 1.3; color: #f87171; pointer-events: none; user-select: none;">
   <span style="color: #ef4444; font-weight: bold;">Lookup: failed</span>
-  <div style="margin-top: 2px; color: #fecaca; font-family: monospace; white-space: pre-wrap; word-break: break-all;">{
+  <div style="margin-top: 4px; color: #fecaca; font-family: monospace; white-space: pre-wrap; word-break: break-all;">{
   error: "${formattedErr}"
 }</div>
 </div>
@@ -1020,8 +1026,8 @@ ${formattedLines}
           type: 'text',
           x: spawnX,
           y: spawnY,
-          width: 170,
-          height: 70,
+          width: 220,
+          height: 125,
           label: errorContent,
           fontFamily: 'mono',
           fontSize: 10,
