@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { OSINTNode, OSINTEdge, ThemeColors, BoardComment } from '../types';
+import { OSINTNode, OSINTEdge, ThemeColors, BoardComment, isStyleColor } from '../types';
 import { Trash2, Check, Type, Eye, Layers, Palette, Users, MessageSquarePlus } from 'lucide-react';
 
 interface PropertiesPanelProps {
@@ -45,10 +45,16 @@ export default function PropertiesPanel({
 
   if (!selectedNode && !selectedEdge) {
     return (
-      <div className={`w-80 border-l ${themeColors.sidebarBg} border-zinc-850 p-5 flex flex-col justify-center items-center text-center select-none`}>
+      <div 
+        className={`w-80 border-l border-zinc-850 p-5 flex flex-col justify-center items-center text-center select-none ${isStyleColor(themeColors.sidebarBg) ? '' : themeColors.sidebarBg}`}
+        style={{
+          backgroundColor: isStyleColor(themeColors.sidebarBg) ? themeColors.sidebarBg : undefined,
+          color: isStyleColor(themeColors.textColor) ? themeColors.textColor : undefined
+        }}
+      >
         <Layers className="w-8 h-8 text-zinc-600 mb-3 animate-pulse" />
         <h3 className="text-xs uppercase tracking-widest font-mono font-bold text-zinc-400 mb-1.5 glow-text-indigo">
-          // СВОЙСТВА И СТИЛИ
+          СВОЙСТВА И СТИЛИ
         </h3>
         <p className="text-[10px] font-mono text-zinc-500 max-w-[210px] leading-relaxed">
           Выберите узел текста или связь на доске для настройки шрифта, размера, цвета и типа соединений.
@@ -78,7 +84,13 @@ export default function PropertiesPanel({
   };
 
   return (
-    <div className={`w-80 border-l ${themeColors.sidebarBg} border-zinc-850 p-4 flex flex-col justify-between overflow-y-auto scrollbar-thin ${themeColors.scrollbarBg} h-full select-text`}>
+    <div 
+      className={`w-80 border-l border-zinc-850 p-4 flex flex-col justify-between overflow-y-auto scrollbar-thin h-full select-text ${isStyleColor(themeColors.sidebarBg) ? '' : themeColors.sidebarBg} ${isStyleColor(themeColors.scrollbarBg) ? '' : themeColors.scrollbarBg}`}
+      style={{
+        backgroundColor: isStyleColor(themeColors.sidebarBg) ? themeColors.sidebarBg : undefined,
+        color: isStyleColor(themeColors.textColor) ? themeColors.textColor : undefined
+      }}
+    >
       <div className="space-y-4">
         
         {/* ── CARD NODE FORMATTING PANEL */}
@@ -86,7 +98,7 @@ export default function PropertiesPanel({
           <div className="space-y-4">
             <div className="pb-2 text-[10px] border-b border-zinc-850">
               <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-500 font-bold block mb-1">
-                // ФОРМАТИРОВАНИЕ ТЕКСТА
+                ФОРМАТИРОВАНИЕ ТЕКСТА
               </span>
               <h2 className="text-xs font-mono font-bold tracking-tight text-white uppercase">
                 Блок ID: {selectedNode.id.substring(0, 8)}
@@ -315,7 +327,7 @@ export default function PropertiesPanel({
           <div className="space-y-4">
             <div className="pb-2 text-[10px] border-b border-zinc-850">
               <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-500 font-bold block mb-1">
-                // СВОЙСТВА СВЯЗИ
+                СВОЙСТВА СВЯЗИ
               </span>
               <h2 className="text-xs font-mono font-bold tracking-tight text-white uppercase">
                 Связь ID: {selectedEdge.id.substring(0, 8)}

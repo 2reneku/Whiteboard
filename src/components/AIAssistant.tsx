@@ -28,7 +28,7 @@ export default function AIAssistant({
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'ai',
-      text: 'Приветствую, инспектор. Я ваш AI-ассистент по OSINT-расследованиям.\n\nДобавьте объекты на холст, запустите несколько лукапов, и я помогу вам спроектировать тактическую карту, выявить пересечения или скомпилировать отчёт.',
+      text: 'Приветствую. Я ваш AI-ассистент.\n\nДобавьте объекты на холст, и я помогу вам спроектировать интерактивную карту, выявить пересечения или составить отчёт.',
     },
   ]);
   const [loading, setLoading] = useState(false);
@@ -150,7 +150,7 @@ export default function AIAssistant({
       {/* Header bar */}
       <div className="p-3 border-b border-zinc-900 bg-zinc-950/40 flex items-center justify-between shrink-0">
         <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-500 font-bold flex items-center">
-          <Brain className="w-3.5 h-3.5 mr-1.5 text-teal-500" /> // ИНСПЕКТОР ИНТЕЛЛЕКТА (AI)
+          <Brain className="w-3.5 h-3.5 mr-1.5 text-teal-500" /> ИНТЕЛЛЕКТУАЛЬНЫЙ АССИСТЕНТ (AI)
         </span>
         <span className="text-[8.5px] font-mono text-teal-400 bg-teal-950/30 border border-teal-900 px-1.5 py-0.2 select-none glow-teal">
           ONLINE
@@ -170,7 +170,7 @@ export default function AIAssistant({
             <div className="flex items-center space-x-1.5 mb-1">
               {msg.role === 'analyst' ? (
                 <>
-                  <span className="text-[9px] uppercase tracking-wider font-mono text-zinc-500 font-bold">инспектор (Вы)</span>
+                  <span className="text-[9px] uppercase tracking-wider font-mono text-zinc-500 font-bold">Пользователь (Вы)</span>
                   <div className="w-1.5 h-1.5 rounded-none bg-zinc-500" />
                 </>
               ) : (

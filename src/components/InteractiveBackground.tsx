@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { ThemeColors, isStyleColor } from '../types';
 
 interface NetworkParticle {
   x: number;
@@ -8,9 +9,19 @@ interface NetworkParticle {
   radius: number;
 }
 
-export default function InteractiveBackground() {
+interface InteractiveBackgroundProps {
+  themeColors?: ThemeColors;
+}
+
+export default function InteractiveBackground({ themeColors }: InteractiveBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const mouseRef = useRef<{ x: number | null; y: number | null }>({ x: null, y: null });
+
+  // Keep theme ref to avoid re-triggering useEffect on every theme change, keeping animation seamless
+  const themeRef = useRef(themeColors);
+  useEffect(() => {
+    themeRef.current = themeColors;
+  }, [themeColors]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -65,8 +76,72 @@ export default function InteractiveBackground() {
     window.addEventListener('mouseleave', handleMouseLeave);
 
     const animate = () => {
-      // Clean deep background color to keep it calm and elegant
-      ctx.fillStyle = '#09090b';
+      // Resolve colors on every frame based on the latest theme state
+      const colors = themeRef.current;
+      let bg = '#09090b';
+      let gridLine = 'rgba(39, 39, 42, 0.15)';
+      let gridIntersection = 'rgba(63, 63, 70, 0.35)';
+      let glowColorStart = 'rgba(99, 102, 241, 0.06)';
+      let glowColorMid = 'rgba(99, 102, 241, 0.02)';
+      let particleColor = 'rgba(129, 140, 248, 0.25)';
+      let connectionColor = 'rgba(129, 140, 248, 0.12)';
+
+      if (colors) {
+        // Resolve background
+        if (isStyleColor(colors.bg)) {
+          bg = colors.bg;
+        } else if (colors.bg.includes('light') || colors.bg.includes('fcfdfd') || (colors.name && colors.name.toLowerCase().includes('белая'))) {
+          bg = '#fcfdfd';
+        } else {
+          bg = '#09090b';
+        }
+
+        // Resolve grid lines/dots color
+        if (colors.grid) {
+          if (isStyleColor(colors.grid)) {
+            gridLine = colors.grid;
+            gridIntersection = colors.grid;
+          } else {
+            gridLine = colors.grid;
+            gridIntersection = colors.grid;
+          }
+        }
+
+        // Helper to convert hex to rgba
+        const hexToRgba = (hexStr: string, alpha: number) => {
+          let hex = hexStr.replace('#', '').trim();
+          if (hex.length === 3) {
+            hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+          }
+          const r = parseInt(hex.substring(0, 2), 16);
+          const g = parseInt(hex.substring(2, 4), 16);
+          const b = parseInt(hex.substring(4, 6), 16);
+          if (isNaN(r) || isNaN(g) || isNaN(b)) {
+            return `rgba(99, 102, 241, ${alpha})`;
+          }
+          return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        };
+
+        // Resolve accent hex for particles, glow and connections
+        let accentHex = '#6366f1';
+        if (colors.accent) {
+          if (isStyleColor(colors.accent)) {
+            accentHex = colors.accent;
+          } else if (colors.accent.includes('slate-900') || colors.accent.includes('slate-950')) {
+            accentHex = '#0f172a';
+          } else if (colors.accent.includes('zinc-300')) {
+            accentHex = '#a1a1aa';
+          }
+        }
+
+        glowColorStart = hexToRgba(accentHex, 0.08);
+        glowColorMid = hexToRgba(accentHex, 0.02);
+        particleColor = hexToRgba(accentHex, 0.35);
+        connectionColor = hexToRgba(accentHex, 0.18);
+      }
+
+      // Clean background color
+      ctx.fillStyle = bg;
       ctx.fillRect(0, 0, width, height);
 
       const mX = mouseRef.current.x;
@@ -74,7 +149,7 @@ export default function InteractiveBackground() {
 
       // 1. DRAW SUBTLE ACCENT GRID ON THE BACKGROUND
       const gridSize = 64;
-      ctx.strokeStyle = 'rgba(39, 39, 42, 0.15)'; // Zinc-800 equivalent with very low opacity
+      ctx.strokeStyle = gridLine.includes('rgba') ? gridLine : `${gridLine}22`; // Ensure subtle opacity if hex
       ctx.lineWidth = 0.5;
 
       for (let x = 0; x < width; x += gridSize) {
@@ -92,7 +167,7 @@ export default function InteractiveBackground() {
       }
 
       // Draw elegant tiny intersections (plus marks)
-      ctx.fillStyle = 'rgba(63, 63, 70, 0.35)'; // Zinc-700
+      ctx.fillStyle = gridIntersection.includes('rgba') ? gridIntersection : `${gridIntersection}44`;
       for (let x = gridSize; x < width; x += gridSize * 2) {
         for (let y = gridSize; y < height; y += gridSize * 2) {
           ctx.fillRect(x - 2, y, 5, 0.5);
@@ -104,9 +179,9 @@ export default function InteractiveBackground() {
       if (mX !== null && mY !== null) {
         const glowRadius = 240;
         const radialGlow = ctx.createRadialGradient(mX, mY, 10, mX, mY, glowRadius);
-        radialGlow.addColorStop(0, 'rgba(99, 102, 241, 0.06)');
-        radialGlow.addColorStop(0.5, 'rgba(99, 102, 241, 0.02)');
-        radialGlow.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+        radialGlow.addColorStop(0, glowColorStart);
+        radialGlow.addColorStop(0.5, glowColorMid);
+        radialGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = radialGlow;
         ctx.beginPath();
         ctx.arc(mX, mY, glowRadius, 0, Math.PI * 2);
@@ -136,14 +211,13 @@ export default function InteractiveBackground() {
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < 180) {
             const force = (1.0 - dist / 180) * 0.15;
-            // nudge slightly closer in an atmospheric drift
             p.x -= (dx / dist) * force;
             p.y -= (dy / dist) * force;
           }
         }
 
         // Draw particle dot
-        ctx.fillStyle = 'rgba(129, 140, 248, 0.25)'; // delicate indigo tint
+        ctx.fillStyle = particleColor;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -156,8 +230,17 @@ export default function InteractiveBackground() {
           const dist = Math.sqrt(dx * dx + dy * dy);
 
           if (dist < 130) {
-            const alpha = (1.0 - dist / 130) * 0.12;
-            ctx.strokeStyle = `rgba(129, 140, 248, ${alpha})`;
+            const alpha = (1.0 - dist / 130);
+            let currentAlpha = 0.12;
+            if (connectionColor.includes('rgba')) {
+              const match = connectionColor.match(/[\d.]+\)$/);
+              if (match) {
+                currentAlpha = parseFloat(match[0]) || 0.12;
+              }
+            }
+            ctx.strokeStyle = connectionColor.includes('rgba') 
+              ? connectionColor.replace(/[\d.]+\)$/, `${(alpha * currentAlpha).toFixed(3)})`)
+              : `${connectionColor}22`;
             ctx.lineWidth = 0.5;
             ctx.beginPath();
             ctx.moveTo(p.x, p.y);

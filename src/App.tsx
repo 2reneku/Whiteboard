@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, MouseEvent as ReactMouseEvent } from 'react';
-import { NodeType, OSINTNode, OSINTEdge, PeerCursor, ThemeType, THEMES, BoardStroke, BoardComment } from './types';
+import { NodeType, OSINTNode, OSINTEdge, PeerCursor, ThemeType, ThemeColors, THEMES, BoardStroke, BoardComment, isStyleColor } from './types';
 import Sidebar from './components/Sidebar';
 import Canvas from './components/Canvas';
 import PropertiesPanel from './components/PropertiesPanel';
@@ -145,7 +145,591 @@ export default function App() {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastCursorUpdateRef = useRef<number>(0);
-  const currentTheme = THEMES[selectedTheme];
+
+  // Load custom themes from localStorage
+  const [customThemes, setCustomThemes] = useState<Record<string, ThemeColors>>(() => {
+    try {
+      const saved = localStorage.getItem('whiteboard_custom_themes');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const allThemes: Record<string, ThemeColors> = { ...THEMES, ...customThemes };
+  const currentTheme = allThemes[selectedTheme] || THEMES.dark;
+
+  const isInitialThemeLoaded = useRef(false);
+
+  // Sync user selectedTheme and customThemes with account on DB when changes occur
+  useEffect(() => {
+    if (!currentUsername || !isInitialThemeLoaded.current) return;
+
+    const syncThemeWithAccount = async () => {
+      try {
+        await fetch('/api/auth/profile/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: currentUsername,
+            selectedTheme,
+            customThemes
+          })
+        });
+      } catch (err) {
+        console.error("Failed to sync theme with account profile:", err);
+      }
+    };
+
+    syncThemeWithAccount();
+  }, [selectedTheme, customThemes, currentUsername]);
+
+  // Custom Theme Creator Modal state
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  const [newThemeName, setNewThemeName] = useState('Моя Тема');
+  const [newThemeBg, setNewThemeBg] = useState('#0f172a');
+  const [newThemeGrid, setNewThemeGrid] = useState('rgba(255,255,255,0.04)');
+  const [newThemeCardBg, setNewThemeCardBg] = useState('#1e293b');
+  const [newThemeCardBorder, setNewThemeCardBorder] = useState('#334155');
+  const [newThemeCardBorderActive, setNewThemeCardBorderActive] = useState('#6366f1');
+  const [newThemeTextColor, setNewThemeTextColor] = useState('#f8fafc');
+  const [newThemeTextSecondary, setNewThemeTextSecondary] = useState('#94a3b8');
+  const [newThemeSidebarBg, setNewThemeSidebarBg] = useState('#0f172a');
+  const [newThemeHeaderBg, setNewThemeHeaderBg] = useState('#0f172a');
+  const [newThemeAccent, setNewThemeAccent] = useState('#6366f1');
+
+  const handleCreateCustomTheme = () => {
+    if (!newThemeName.trim()) return;
+    const id = 'custom_' + Date.now();
+    const themeData: ThemeColors = {
+      name: newThemeName.trim(),
+      bg: newThemeBg,
+      grid: newThemeGrid,
+      cardBg: newThemeCardBg,
+      cardBorder: newThemeCardBorder,
+      cardBorderActive: newThemeCardBorderActive,
+      textColor: newThemeTextColor,
+      textSecondary: newThemeTextSecondary,
+      sidebarBg: newThemeSidebarBg,
+      headerBg: newThemeHeaderBg,
+      accent: newThemeAccent,
+      accentHover: newThemeAccent,
+      scrollbarBg: 'scrollbar-thumb-zinc-700'
+    };
+
+    const updated = { ...customThemes, [id]: themeData };
+    setCustomThemes(updated);
+    localStorage.setItem('whiteboard_custom_themes', JSON.stringify(updated));
+    setSelectedTheme(id);
+    setShowThemeModal(false);
+    
+    // reset name
+    setNewThemeName('Моя Тема');
+  };
+
+  const renderThemeModal = () => {
+    if (!showThemeModal) return null;
+    return (
+      <div className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 text-left">
+        <div className="w-full max-w-4xl bg-zinc-950 border border-zinc-900 rounded-xl shadow-2xl relative animate-fade-in animate-scale-up flex flex-col max-h-[90vh]">
+          {/* STICKY HEADER */}
+          <div className="p-6 border-b border-zinc-900 flex justify-between items-start">
+            <div className="text-left">
+              <h3 className="font-mono text-xs uppercase tracking-widest font-black text-white flex items-center space-x-2">
+                <Palette className="w-4 h-4 text-indigo-400" />
+                <span>ПЕРСОНАЛИЗАЦИЯ: КОНСТРУКТОР ТЕМ</span>
+              </h3>
+              <p className="text-[11px] text-zinc-500 mt-1 leading-normal font-sans">
+                Создайте свою уникальную цветовую схему, которая применится ко всему приложению.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setShowThemeModal(false);
+                if (!customThemes[selectedTheme] && selectedTheme !== 'dark' && selectedTheme !== 'light') {
+                  setSelectedTheme('dark');
+                }
+              }}
+              className="text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* SCROLLABLE CONTENT BODY */}
+          <div className="flex-1 overflow-y-auto scrollbar-thin p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              
+              {/* LEFT COLUMN: THEME PARAMETERS FORM */}
+              <div className="space-y-6">
+                <div className="border-b border-zinc-900 pb-2">
+                  <h4 className="font-mono text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Параметры темы</h4>
+                </div>
+
+                {/* Theme Name */}
+                <div className="space-y-1.5">
+                  <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Название темы</label>
+                  <input
+                    type="text"
+                    className="w-full text-xs font-mono bg-zinc-900 border border-zinc-850 text-zinc-100 px-3 py-2 rounded focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                    value={newThemeName}
+                    onChange={(e) => setNewThemeName(e.target.value)}
+                    placeholder="Моя Тема"
+                  />
+                </div>
+
+                {/* Colors Grid */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Background */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Цвет фона (BG)</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeBg}
+                          onChange={(e) => setNewThemeBg(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeBg}
+                        onChange={(e) => setNewThemeBg(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Accent */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Акцент (Accent)</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeAccent}
+                          onChange={(e) => setNewThemeAccent(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeAccent}
+                        onChange={(e) => setNewThemeAccent(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Primary Text */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Текст (Primary)</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeTextColor}
+                          onChange={(e) => setNewThemeTextColor(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeTextColor}
+                        onChange={(e) => setNewThemeTextColor(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Secondary Text */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Текст (Secondary)</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeTextSecondary}
+                          onChange={(e) => setNewThemeTextSecondary(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeTextSecondary}
+                        onChange={(e) => setNewThemeTextSecondary(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sidebar BG */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Панель / Меню</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeSidebarBg}
+                          onChange={(e) => setNewThemeSidebarBg(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeSidebarBg}
+                        onChange={(e) => setNewThemeSidebarBg(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Header BG */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Верхняя панель</label>
+                      <button 
+                        type="button"
+                        onClick={() => setNewThemeHeaderBg(newThemeSidebarBg)}
+                        className="text-[8px] font-mono text-indigo-400 hover:text-indigo-300 font-bold hover:underline cursor-pointer"
+                        title="Скопировать цвет из Панели / Меню"
+                      >
+                        [Синхр.]
+                      </button>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeHeaderBg}
+                          onChange={(e) => setNewThemeHeaderBg(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeHeaderBg}
+                        onChange={(e) => setNewThemeHeaderBg(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Background Dots */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Точки сетки / Сетка</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeGrid.startsWith('rgba') ? '#777777' : newThemeGrid}
+                          onChange={(e) => setNewThemeGrid(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeGrid}
+                        onChange={(e) => setNewThemeGrid(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Card BG */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Фон нод (Card BG)</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeCardBg}
+                          onChange={(e) => setNewThemeCardBg(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeCardBg}
+                        onChange={(e) => setNewThemeCardBg(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Card Border */}
+                  <div className="space-y-1.5">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Рамка нод (Border)</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeCardBorder}
+                          onChange={(e) => setNewThemeCardBorder(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeCardBorder}
+                        onChange={(e) => setNewThemeCardBorder(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Card Border Active */}
+                  <div className="space-y-1.5 col-span-2">
+                    <label className="block text-[8px] uppercase font-mono tracking-wider text-zinc-500 font-bold">Рамка активной ноды</label>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative w-8 h-8 rounded border border-zinc-800 overflow-hidden shrink-0">
+                        <input
+                          type="color"
+                          className="absolute inset-0 w-full h-full transform scale-150 cursor-pointer p-0 border-none bg-transparent"
+                          value={newThemeCardBorderActive}
+                          onChange={(e) => setNewThemeCardBorderActive(e.target.value)}
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        className="w-full text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-300 px-2 py-1.5 rounded outline-none focus:border-zinc-700"
+                        value={newThemeCardBorderActive}
+                        onChange={(e) => setNewThemeCardBorderActive(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCreateCustomTheme}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-mono font-bold uppercase rounded-lg cursor-pointer transition-colors"
+                >
+                  💾 СОХРАНИТЬ И ПРИМЕНИТЬ
+                </button>
+              </div>
+
+              {/* RIGHT COLUMN: LIVE THEME PREVIEW + CUSTOM THEMES LIST */}
+              <div className="space-y-6 flex flex-col justify-between border-t md:border-t-0 md:border-l border-zinc-900 pt-6 md:pt-0 md:pl-8">
+                
+                {/* LIVE THEME PREVIEW */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-mono text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Интерактивное превью (Live)</h4>
+                    <span className="text-[9px] text-zinc-550 font-mono font-bold bg-zinc-900 px-2 py-0.5 rounded uppercase">Whiteboard</span>
+                  </div>
+                  
+                  {/* Sandbox Whiteboard Container */}
+                  <div 
+                    className="relative h-[190px] rounded-xl border border-zinc-800 overflow-hidden shadow-inner flex flex-col transition-all duration-300"
+                    style={{ backgroundColor: newThemeBg }}
+                  >
+                    {/* Miniature Top Bar */}
+                    <div 
+                      className="h-6 border-b flex items-center justify-between px-2.5 pointer-events-none z-20 shrink-0"
+                      style={{ 
+                        backgroundColor: newThemeHeaderBg,
+                        borderColor: newThemeCardBorder
+                      }}
+                    >
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-[5px] font-mono font-bold" style={{ color: newThemeTextColor }}>← В МЕНЮ</span>
+                        <div className="w-1 h-1 rounded-full animate-pulse" style={{ backgroundColor: newThemeAccent }} />
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <div className="w-2 h-1 rounded-sm" style={{ backgroundColor: newThemeTextColor, opacity: 0.2 }} />
+                        <div className="w-3.5 h-1.5 rounded-sm" style={{ backgroundColor: newThemeAccent }} />
+                      </div>
+                    </div>
+
+                    {/* Miniature Content Area (Sidebar + Whiteboard Space) */}
+                    <div className="flex flex-1 relative min-h-0">
+                      {/* SVG/CSS Grid overlay using newThemeGrid */}
+                      <div 
+                        className="absolute inset-0 pointer-events-none opacity-40" 
+                        style={{
+                          backgroundImage: newThemeGrid.startsWith('rgba') 
+                            ? `radial-gradient(${newThemeGrid} 1px, transparent 1px)` 
+                            : `radial-gradient(${newThemeGrid} 1.5px, transparent 1.5px)`,
+                          backgroundSize: '14px 14px'
+                        }}
+                      />
+
+                      {/* Miniature Sidebar on Left of Preview */}
+                      <div 
+                        className="w-10 border-r flex flex-col items-center py-2 space-y-1.5 pointer-events-none z-10"
+                        style={{ 
+                          backgroundColor: newThemeSidebarBg,
+                          borderColor: newThemeCardBorder
+                        }}
+                      >
+                        <div className="w-5 h-5 rounded-full bg-zinc-800/40 flex items-center justify-center opacity-60">
+                          <Palette className="w-2.5 h-2.5" style={{ color: newThemeTextColor }} />
+                        </div>
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: newThemeAccent }} />
+                        <div className="w-4 h-0.5" style={{ backgroundColor: newThemeTextSecondary }} />
+                        <div className="w-4 h-0.5" style={{ backgroundColor: newThemeTextSecondary }} />
+                      </div>
+
+                      {/* miniature active whiteboard element previews */}
+                      <div className="flex-1 p-3 relative z-10 flex flex-col justify-between items-start select-none">
+                        
+                        {/* Connection arrow svg preview between card 1 and card 2 */}
+                        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                          <defs>
+                            <marker id="preview-arrow-new" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                              <path d="M 0 2.5 L 8 5 L 0 7.5 z" fill={newThemeAccent} />
+                            </marker>
+                          </defs>
+                          <path 
+                            d="M 45,20 Q 75,32 105,22" 
+                            fill="none" 
+                            stroke={newThemeAccent} 
+                            strokeWidth="1.2" 
+                            markerEnd="url(#preview-arrow-new)"
+                            strokeDasharray="2 2"
+                          />
+                        </svg>
+
+                        {/* Mockup Node 1 (Inactive) */}
+                        <div 
+                          className="absolute left-[15px] top-[10px] w-[65px] rounded border p-1 shadow-sm text-left"
+                          style={{ 
+                            backgroundColor: newThemeCardBg, 
+                            borderColor: newThemeCardBorder,
+                          }}
+                        >
+                          <div className="flex items-center space-x-1 mb-0.5">
+                            <div className="w-1 h-1 rounded-full" style={{ backgroundColor: newThemeAccent }} />
+                            <span className="text-[6.5px] font-mono uppercase font-black truncate" style={{ color: newThemeTextColor }}>
+                              Node-01
+                            </span>
+                          </div>
+                          <div className="text-[5px] font-sans truncate leading-none" style={{ color: newThemeTextSecondary }}>
+                            Inactive
+                          </div>
+                        </div>
+
+                        {/* Mockup Node 2 (Active state) */}
+                        <div 
+                          className="absolute right-[20px] bottom-[15px] w-[70px] rounded border p-1 shadow-sm text-left"
+                          style={{ 
+                            backgroundColor: newThemeCardBg, 
+                            borderColor: newThemeCardBorderActive,
+                            boxShadow: `0 0 6px ${newThemeAccent}20`
+                          }}
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <div className="flex items-center space-x-1">
+                              <div className="w-1.5 h-1.5 rounded-full flex items-center justify-center text-[4px]" style={{ backgroundColor: newThemeAccent, color: '#fff' }}>
+                                ✔
+                              </div>
+                              <span className="text-[6.5px] font-mono uppercase font-black truncate" style={{ color: newThemeTextColor }}>
+                                Active-02
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-[5px] font-sans leading-relaxed" style={{ color: newThemeTextSecondary }}>
+                            Selected
+                          </div>
+                        </div>
+
+                        {/* Info Badge inside whiteboard preview */}
+                        <div 
+                          className="absolute left-[15px] bottom-[10px] px-1 py-0.5 rounded text-[5px] font-mono tracking-widest border"
+                          style={{
+                            backgroundColor: newThemeSidebarBg,
+                            borderColor: newThemeCardBorder,
+                            color: newThemeTextColor
+                          }}
+                        >
+                          {newThemeName || 'N/A'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CREATED CUSTOM THEMES LIST */}
+                <div className="space-y-3 pt-4 border-t border-zinc-900 flex-1 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <h4 className="font-mono text-[10px] uppercase text-zinc-400 font-bold tracking-wider">Мои Темы</h4>
+                    
+                    {Object.keys(customThemes).length === 0 ? (
+                      <div className="h-28 flex flex-col justify-center items-center text-center p-4 border border-dashed border-zinc-850 rounded-xl bg-zinc-900/10">
+                        <span className="text-lg mb-1">🎨</span>
+                        <p className="text-[10px] font-mono text-zinc-500 uppercase font-bold">Нет пользовательских тем</p>
+                        <p className="text-[9px] text-zinc-650 mt-1">Создайте свою тему слева, чтобы персонализировать холст!</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[160px] overflow-y-auto scrollbar-thin pr-1">
+                        {(Object.entries(customThemes) as [string, ThemeColors][]).map(([id, theme]) => (
+                          <div 
+                            key={id} 
+                            onClick={() => setSelectedTheme(id)}
+                            className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-all ${
+                              selectedTheme === id 
+                                ? 'border-indigo-500 bg-indigo-950/20' 
+                                : 'border-zinc-900 bg-zinc-900/40 hover:bg-zinc-900'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2.5">
+                              {/* Swatch indicators */}
+                              <div className="flex -space-x-1">
+                                <div className="w-3.5 h-3.5 rounded-full border border-black/40" style={{ backgroundColor: theme.bg }} />
+                                <div className="w-3.5 h-3.5 rounded-full border border-black/40" style={{ backgroundColor: theme.accent }} />
+                                <div className="w-3.5 h-3.5 rounded-full border border-black/40" style={{ backgroundColor: theme.textColor }} />
+                              </div>
+                              <span className="text-[11px] font-bold text-zinc-350 font-mono truncate max-w-[150px]">
+                                {theme.name || id}
+                              </span>
+                            </div>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const updated = { ...customThemes };
+                                delete updated[id];
+                                setCustomThemes(updated);
+                                localStorage.setItem('whiteboard_custom_themes', JSON.stringify(updated));
+                                if (selectedTheme === id) {
+                                  setSelectedTheme('dark');
+                                }
+                              }}
+                              className="p-1 hover:bg-zinc-800 text-zinc-500 hover:text-red-400 rounded cursor-pointer transition-colors"
+                              title="Удалить тему"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+
+          {/* STICKY FOOTER */}
+          <div className="p-4 bg-zinc-950 border-t border-zinc-900 flex justify-end">
+            <button
+              onClick={() => {
+                setShowThemeModal(false);
+                if (!customThemes[selectedTheme] && selectedTheme !== 'dark' && selectedTheme !== 'light') {
+                  setSelectedTheme('dark');
+                }
+              }}
+              className="px-6 py-2 bg-zinc-900 hover:bg-zinc-850 text-zinc-400 text-[10px] font-mono tracking-wider font-bold uppercase rounded border border-zinc-850 cursor-pointer transition-colors"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // History stack for Undo trigger
   const [history, setHistory] = useState<{ nodes: OSINTNode[]; edges: OSINTEdge[]; strokes: BoardStroke[] }[]>([]);
@@ -224,6 +808,14 @@ export default function App() {
             setCurrentUserAvatarColor(data.avatarColor || '#3b82f6');
             localStorage.setItem(`whiteboard_avatar_url_${data.username}`, data.avatarUrl || '');
             localStorage.setItem(`whiteboard_avatar_color_${data.username}`, data.avatarColor || '#3b82f6');
+            if (data.selectedTheme) {
+              setSelectedTheme(data.selectedTheme);
+            }
+            if (data.customThemes) {
+              setCustomThemes(data.customThemes);
+              localStorage.setItem('whiteboard_custom_themes', JSON.stringify(data.customThemes));
+            }
+            isInitialThemeLoaded.current = true;
             loadUserBoards(data.username);
             return;
           }
@@ -493,12 +1085,12 @@ export default function App() {
     setAuthSuccess('');
 
     if (!authUsername.trim() || !authPassword.trim()) {
-      setAuthError('Укажите развед-позывной и пароль');
+      setAuthError('Укажите имя пользователя и пароль');
       return;
     }
 
     if (authUsername.trim().length < 2) {
-      setAuthError('Имя позывного должно содержать как минимум 2 символа');
+      setAuthError('Имя пользователя должно содержать как минимум 2 символа');
       return;
     }
 
@@ -553,6 +1145,14 @@ export default function App() {
         setCurrentUserAvatarColor(data.avatarColor || '#3b82f6');
         localStorage.setItem(`whiteboard_avatar_url_${data.username}`, data.avatarUrl || '');
         localStorage.setItem(`whiteboard_avatar_color_${data.username}`, data.avatarColor || '#3b82f6');
+        if (data.selectedTheme) {
+          setSelectedTheme(data.selectedTheme);
+        }
+        if (data.customThemes) {
+          setCustomThemes(data.customThemes);
+          localStorage.setItem('whiteboard_custom_themes', JSON.stringify(data.customThemes));
+        }
+        isInitialThemeLoaded.current = true;
         loadUserBoards(data.username);
         setCurrentView('dashboard');
       }
@@ -571,6 +1171,8 @@ export default function App() {
     setComments([]);
     setCurrentBoardId('');
     setCurrentView('dashboard');
+    setSelectedTheme('dark');
+    isInitialThemeLoaded.current = false;
     localStorage.removeItem('whiteboard_user');
     localStorage.removeItem('whiteboard_device_token');
   };
@@ -1559,16 +2161,26 @@ ${formattedLines}
   // ──────────────────────────────────────────────────────── RENDER THE APPLICATION GATEWAY (LOGIN/REGISTER)
   if (!currentUsername) {
     return (
-      <div className="w-screen h-screen flex items-center justify-center bg-black text-zinc-100 font-sans p-4 antialiased relative overflow-hidden select-none">
-        <InteractiveBackground />
+      <div 
+        className={`w-screen h-screen flex items-center justify-center font-sans p-4 antialiased relative overflow-hidden select-none ${isStyleColor(currentTheme.bg) ? '' : currentTheme.bg}`}
+        style={{ backgroundColor: isStyleColor(currentTheme.bg) ? currentTheme.bg : undefined, color: isStyleColor(currentTheme.textColor) ? currentTheme.textColor : undefined }}
+      >
+        <InteractiveBackground themeColors={currentTheme} />
         
-        <div className="w-full max-w-sm bg-zinc-950/85 backdrop-blur-md border border-zinc-900 rounded-xl p-8 shadow-2xl relative z-10 flex flex-col transition-all duration-300 animate-fade-in divide-y divide-zinc-900">
+        <div 
+          className={`w-full max-w-sm backdrop-blur-md border rounded-xl p-8 shadow-2xl relative z-10 flex flex-col transition-all duration-300 animate-fade-in divide-y ${isStyleColor(currentTheme.cardBg) ? '' : 'bg-zinc-950/85 border-zinc-900'}`}
+          style={{
+            backgroundColor: isStyleColor(currentTheme.cardBg) ? (currentTheme.cardBg.startsWith('rgba') ? currentTheme.cardBg : `${currentTheme.cardBg}dd`) : undefined,
+            borderColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined,
+            color: isStyleColor(currentTheme.textColor) ? currentTheme.textColor : undefined
+          }}
+        >
           <div className="pb-6 space-y-2 text-center">
             <h1 className="text-xl font-mono tracking-widest text-white uppercase font-black">
-              WHITEBOARD OSINT
+              COOP WHITEBOARD
             </h1>
             <p className="text-[10px] text-zinc-400 uppercase tracking-widest leading-relaxed">
-              Интерактивная доска для расследований и визуализации карт
+              Интерактивная доска совместной работы
             </p>
           </div>
 
@@ -1588,14 +2200,14 @@ ${formattedLines}
             <form onSubmit={handleAuthSubmit} className="space-y-4 text-left">
               <div>
                 <label className="block text-[9px] uppercase font-mono tracking-widest text-zinc-500 mb-1.5 font-bold">
-                  Позывной оператора (Nickname)
+                  Имя пользователя (Nickname)
                 </label>
                 <input
                   type="text"
                   autoComplete="username"
                   required
                   className="w-full bg-zinc-900/70 border border-zinc-800 focus:border-zinc-500 text-xs font-mono px-3.5 py-2.5 rounded text-white outline-none placeholder-zinc-700 font-medium transition-colors"
-                  placeholder="Например, Inspector_X"
+                  placeholder="Например, user_123"
                   value={authUsername}
                   onChange={(e) => setAuthUsername(e.target.value)}
                 />
@@ -1687,7 +2299,7 @@ ${formattedLines}
                 </div>
               ) : (
                 <div className="flex justify-between items-center w-full">
-                  <span>Вспомнили позывной?</span>
+                  <span>Вспомнили имя пользователя?</span>
                   <button
                     onClick={() => {
                       setAuthMode('login');
@@ -1704,11 +2316,11 @@ ${formattedLines}
 
             <button
               onClick={() => {
-                localStorage.setItem('whiteboard_user', 'Инспектор_Демо');
-                setCurrentUsername('Инспектор_Демо');
+                localStorage.setItem('whiteboard_user', 'Пользователь_Демо');
+                setCurrentUsername('Пользователь_Демо');
                 setCurrentUserAvatarUrl('');
                 setCurrentUserAvatarColor('#ef4444');
-                loadUserBoards('Инспектор_Демо');
+                loadUserBoards('Пользователь_Демо');
                 setCurrentView('dashboard');
               }}
               className="w-full py-2 bg-transparent hover:bg-zinc-900/40 text-[9.5px] font-mono tracking-wider text-zinc-505 hover:text-zinc-300 font-bold rounded border border-zinc-900 flex items-center justify-center cursor-pointer transition-colors"
@@ -1726,18 +2338,37 @@ ${formattedLines}
     const filteredBoards = boards.filter(b => b.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
     return (
-      <div className={`w-screen h-screen overflow-y-auto font-sans text-zinc-300 relative select-none flex flex-col ${THEMES.dark.bg} overflow-hidden`}>
-        <InteractiveBackground />
+      <div 
+        className={`w-screen h-screen overflow-y-auto font-sans relative select-none flex flex-col overflow-hidden ${isStyleColor(currentTheme.bg) ? '' : currentTheme.bg}`}
+        style={{
+          backgroundColor: isStyleColor(currentTheme.bg) ? currentTheme.bg : undefined,
+          color: isStyleColor(currentTheme.textColor) ? currentTheme.textColor : undefined
+        }}
+      >
+        <InteractiveBackground themeColors={currentTheme} />
         {/* Subtle decorative visual elements */}
         <div className="absolute top-0 right-0 w-96 h-96 bg-zinc-905/40 rounded-full blur-3xl pointer-events-none z-0" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-zinc-905/40 rounded-full blur-3xl pointer-events-none z-0" />
 
         {/* COMPACT DASHBOARD HEADER */}
-        <header className="h-11 border-b border-zinc-900/60 flex items-center justify-between px-6 bg-zinc-950/40 backdrop-blur-md shrink-0 z-[150] relative select-none">
+        <header 
+          className={`h-11 border-b flex items-center justify-between px-6 backdrop-blur-md shrink-0 z-[150] relative select-none ${isStyleColor(currentTheme.headerBg || currentTheme.sidebarBg) ? '' : 'bg-zinc-950/40 border-zinc-900/60'}`}
+          style={{
+            backgroundColor: isStyleColor(currentTheme.headerBg || currentTheme.sidebarBg) 
+              ? ((currentTheme.headerBg || currentTheme.sidebarBg).startsWith('rgba') 
+                  ? (currentTheme.headerBg || currentTheme.sidebarBg) 
+                  : `${currentTheme.headerBg || currentTheme.sidebarBg}dd`) 
+              : undefined,
+            borderBottomColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined
+          }}
+        >
           <div className="flex items-center space-x-3">
             <Layout className="w-4.5 h-4.5 text-zinc-400 animate-pulse" />
-            <span className="font-mono text-xs text-white uppercase font-black tracking-widest">
-              WHITEBOARD OSINT HUB
+            <span 
+              className="font-mono text-xs uppercase font-black tracking-widest text-white"
+              style={{ color: isStyleColor(currentTheme.textColor) ? currentTheme.textColor : undefined }}
+            >
+              COOP WHITEBOARD HUB
             </span>
           </div>
 
@@ -1820,42 +2451,66 @@ ${formattedLines}
 
         {/* CORE CONTAINER */}
         <main className="flex-1 max-w-5xl w-full mx-auto px-6 py-10 z-10 flex flex-col">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-8 border-b border-zinc-900/80">
+          <div 
+            className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-8 border-b border-zinc-900/80"
+            style={{ borderBottomColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined }}
+          >
             <div>
-              <h1 className="text-xl font-mono text-white tracking-tight font-bold uppercase">
+              <h1 
+                className="text-xl font-mono text-white tracking-tight font-bold uppercase"
+                style={{ color: isStyleColor(currentTheme.textColor) ? currentTheme.textColor : undefined }}
+              >
                 Панель Аналитических Проектов
               </h1>
-              <p className="text-xs text-zinc-500 leading-normal mt-1 max-w-lg">
-                Управляйте независимыми холстами расследований. Создавайте новые пространства для визуализации связей, утечек и OSINT-логов.
+              <p 
+                className="text-xs text-zinc-500 leading-normal mt-1 max-w-lg"
+                style={{ color: isStyleColor(currentTheme.textSecondary) ? currentTheme.textSecondary : undefined }}
+              >
+                Управляйте независимыми холстами. Создавайте новые пространства для совместной работы и визуализации связей.
               </p>
             </div>
-
+ 
             <button
               onClick={handleCreateNewBoard}
-              className="bg-white hover:bg-zinc-200 text-black px-4.5 py-2.5 rounded-lg text-xs font-mono font-bold uppercase transition-all duration-100 flex items-center cursor-pointer shrink-0 shadow-lg"
+              className="px-4.5 py-2.5 rounded-lg text-xs font-mono font-bold uppercase transition-all duration-100 flex items-center cursor-pointer shrink-0 shadow-lg"
+              style={{
+                backgroundColor: isStyleColor(currentTheme.accent) ? currentTheme.accent : '#ffffff',
+                color: isStyleColor(currentTheme.bg) ? (currentTheme.bg === '#ffffff' ? '#000000' : '#ffffff') : '#000000'
+              }}
             >
               <FolderPlus className="w-4 h-4 mr-1.5" />
               Создать Доску
             </button>
           </div>
-
+ 
           {/* SEARCH & FILTERS CONTROLS */}
           <div className="flex items-center space-x-3.5 py-5.5">
             <div className="relative flex-1">
               <Search className="w-3.5 h-3.5 text-zinc-650 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Поиск по названию расследования..."
-                className="w-full bg-[#09090b]/80 border border-zinc-850 focus:border-zinc-700 text-xs font-mono pl-9 pr-4 py-2 rounded-lg text-white outline-none placeholder-zinc-600"
+                placeholder="Поиск по названию проекта..."
+                className="w-full border text-xs font-mono pl-9 pr-4 py-2 rounded-lg outline-none placeholder-zinc-600"
+                style={{
+                  backgroundColor: isStyleColor(currentTheme.cardBg) ? currentTheme.cardBg : '#09090b',
+                  borderColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : '#27272a',
+                  color: isStyleColor(currentTheme.textColor) ? currentTheme.textColor : '#ffffff'
+                }}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
           </div>
-
+ 
           {/* GRID BOARDS */}
           {filteredBoards.length === 0 ? (
-            <div className="flex-1 flex flex-col justify-center items-center py-24 text-center border border-dashed border-zinc-900 rounded-2xl bg-[#09090b]/20 select-none">
+            <div 
+              className="flex-1 flex flex-col justify-center items-center py-24 text-center border border-dashed rounded-2xl select-none bg-[#09090b]/20"
+              style={{
+                borderColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined,
+                backgroundColor: isStyleColor(currentTheme.cardBg) ? `${currentTheme.cardBg}20` : undefined
+              }}
+            >
               <Clock className="w-8 h-8 text-zinc-700 mb-3" />
               <p className="font-mono text-xs text-zinc-500 uppercase tracking-widest font-bold">Ничего не найдено</p>
               <p className="text-[11px] text-zinc-600 max-w-xs leading-relaxed mt-1">Отредактируйте параметры поиска или создайте свой первый проект</p>
@@ -1909,9 +2564,17 @@ ${formattedLines}
                     }}
                     className={`group border rounded-xl p-5 flex flex-col justify-between h-44 cursor-pointer relative overflow-hidden transition-all duration-150 shadow-md select-none ${
                       dragOverBoardId === b.id 
-                        ? 'border-indigo-500 bg-indigo-950/25 ring-2 ring-indigo-500/50 scale-[1.02]' 
-                        : 'border-zinc-850 hover:border-zinc-650 bg-zinc-950/60 hover:bg-zinc-950'
+                        ? 'ring-2 scale-[1.02]' 
+                        : isStyleColor(currentTheme.cardBg) ? '' : 'border-zinc-850 hover:border-zinc-650 bg-zinc-950/60 hover:bg-zinc-950'
                     }`}
+                    style={{
+                      backgroundColor: dragOverBoardId === b.id
+                        ? (isStyleColor(currentTheme.accent) ? `${currentTheme.accent}25` : undefined)
+                        : (isStyleColor(currentTheme.cardBg) ? currentTheme.cardBg : undefined),
+                      borderColor: dragOverBoardId === b.id
+                        ? (isStyleColor(currentTheme.accent) ? currentTheme.accent : undefined)
+                        : (isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined)
+                    }}
                   >
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -1946,7 +2609,10 @@ ${formattedLines}
                           />
                         ) : (
                           <div className="flex items-center space-x-2 min-w-0 flex-1">
-                            <h3 className="font-mono text-xs font-bold text-white uppercase tracking-tight group-hover:text-indigo-400 transition-colors truncate">
+                            <h3 
+                              className="font-mono text-xs font-bold text-white uppercase tracking-tight group-hover:text-indigo-400 transition-colors truncate"
+                              style={{ color: isStyleColor(currentTheme.textColor) ? currentTheme.textColor : undefined }}
+                            >
                               {b.name}
                             </h3>
                             {b.isCollab && (
@@ -1983,30 +2649,67 @@ ${formattedLines}
 
                       {/* Info metrics */}
                       <div className="flex flex-wrap gap-1.5 pt-1">
-                        <span className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded">
+                        <span 
+                          className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: isStyleColor(currentTheme.bg) ? currentTheme.bg : undefined,
+                            borderColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined,
+                            color: isStyleColor(currentTheme.textSecondary) ? currentTheme.textSecondary : undefined
+                          }}
+                        >
                           Ноды: {nodeCount}
                         </span>
-                        <span className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded">
+                        <span 
+                          className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded"
+                          style={{
+                            backgroundColor: isStyleColor(currentTheme.bg) ? currentTheme.bg : undefined,
+                            borderColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined,
+                            color: isStyleColor(currentTheme.textSecondary) ? currentTheme.textSecondary : undefined
+                          }}
+                        >
                           Связи: {edgeCount}
                         </span>
                         {strokeCount > 0 && (
-                          <span className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded">
+                          <span 
+                            className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded"
+                            style={{
+                              backgroundColor: isStyleColor(currentTheme.bg) ? currentTheme.bg : undefined,
+                              borderColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined,
+                              color: isStyleColor(currentTheme.textSecondary) ? currentTheme.textSecondary : undefined
+                            }}
+                          >
                             Рисунки: {strokeCount}
                           </span>
                         )}
                         {commentCount > 0 && (
-                          <span className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded">
+                          <span 
+                            className="text-[10px] font-mono bg-zinc-900 border border-zinc-850 text-zinc-400 px-1.5 py-0.5 rounded"
+                            style={{
+                              backgroundColor: isStyleColor(currentTheme.bg) ? currentTheme.bg : undefined,
+                              borderColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined,
+                              color: isStyleColor(currentTheme.textSecondary) ? currentTheme.textSecondary : undefined
+                            }}
+                          >
                             💬 {commentCount}
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-zinc-900 pt-2.5 mt-4">
-                      <span className="text-[10px] font-mono text-zinc-550 flex items-center space-x-1 select-none">
+                    <div 
+                      className="flex items-center justify-between border-t border-zinc-900 pt-2.5 mt-4"
+                      style={{ borderTopColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined }}
+                    >
+                      <span 
+                        className="text-[10px] font-mono text-zinc-550 flex items-center space-x-1 select-none"
+                        style={{ color: isStyleColor(currentTheme.textSecondary) ? currentTheme.textSecondary : undefined }}
+                      >
                         <Clock className="w-3 h-3 text-zinc-600 mr-0.5" /> {dateLabel}
                       </span>
-                      <span className="text-[10px] font-mono text-zinc-400 group-hover:text-white flex items-center font-bold tracking-wider">
+                      <span 
+                        className="text-[10px] font-mono text-zinc-400 group-hover:text-white flex items-center font-bold tracking-wider"
+                        style={{ color: isStyleColor(currentTheme.accent) ? currentTheme.accent : undefined }}
+                      >
                         ОТКРЫТЬ <ChevronRight className="w-3.5 h-3.5 ml-0.5 group-hover:translate-x-0.5 transition-transform" />
                       </span>
                     </div>
@@ -2034,7 +2737,7 @@ ${formattedLines}
                   <span>Редактирование профиля</span>
                 </h3>
                 <p className="text-[11px] text-zinc-500 mt-1 leading-normal font-sans">
-                  Настройте свой визуальный аватар и цветовой позывной для совместной OSINT-деятельности.
+                  Настройте свой визуальный аватар и цвет для совместной работы.
                 </p>
               </div>
 
@@ -2056,7 +2759,7 @@ ${formattedLines}
               {/* COLOR PRESETS */}
               <div className="space-y-1.5 text-left">
                 <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold">
-                  Цвет позывного (Color Accent)
+                  Цветовой акцент (Color Accent)
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#6366f1', '#e11d48'].map((c) => (
@@ -2183,6 +2886,8 @@ ${formattedLines}
             </div>
           </div>
         )}
+
+        {renderThemeModal()}
 
         {/* Logout Confirmation Dialog Modal */}
         {showLogoutConfirm && (
@@ -2314,7 +3019,19 @@ ${formattedLines}
     <div className={`w-screen h-screen flex flex-col overflow-hidden text-zinc-100 ${currentTheme.bg}`}>
       
       {/* ── TOP BAR (EXQUISITE COMPACT MINIMALIST HEADER) */}
-      <header className="h-11 border-b border-zinc-900/60 flex items-center justify-between px-3 select-none bg-zinc-950/40 backdrop-blur-md shrink-0 z-[150]">
+      <header 
+        className={`h-11 border-b flex items-center justify-between px-3 select-none backdrop-blur-md shrink-0 z-[150] relative ${
+          isStyleColor(currentTheme.headerBg || currentTheme.sidebarBg) ? '' : 'bg-zinc-950/40 border-zinc-900/60'
+        }`}
+        style={{
+          backgroundColor: isStyleColor(currentTheme.headerBg || currentTheme.sidebarBg) 
+            ? ((currentTheme.headerBg || currentTheme.sidebarBg).startsWith('rgba') 
+                ? (currentTheme.headerBg || currentTheme.sidebarBg) 
+                : `${currentTheme.headerBg || currentTheme.sidebarBg}dd`) 
+            : undefined,
+          borderBottomColor: isStyleColor(currentTheme.cardBorder) ? currentTheme.cardBorder : undefined
+        }}
+      >
         
         {/* Left section: Back navigation, Switch theme inline and board quick stats */}
         <div className="flex items-center space-x-3.5">
@@ -2339,14 +3056,26 @@ ${formattedLines}
             <select
               className="bg-transparent text-[10px] font-mono font-bold uppercase tracking-wider text-zinc-300 outline-none border-none cursor-pointer pr-1"
               value={selectedTheme}
-              onChange={(e) => setSelectedTheme(e.target.value as ThemeType)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '__ADD_NEW_THEME__') {
+                  setShowThemeModal(true);
+                } else {
+                  setSelectedTheme(val);
+                }
+              }}
               title="Изменить тему доски"
             >
-              <option value="dark" className="bg-zinc-950 text-white">DEFAULT DARK</option>
-              <option value="light" className="bg-white text-black">LIGHT CANVAS</option>
-              <option value="solarized" className="bg-[#002b36] text-[#93a1a1]">SOLARIZED</option>
-              <option value="matrix" className="bg-black text-green-400">MATRIX CODE</option>
-              <option value="slate" className="bg-[#1e293b] text-slate-100">SLATE INDIGO</option>
+              <option value="dark" className="bg-zinc-950 text-white">Черная тема (Dark)</option>
+              <option value="light" className="bg-white text-black">Белая тема (Light)</option>
+              {(Object.entries(customThemes) as [string, ThemeColors][]).map(([id, t]) => (
+                <option key={id} value={id} className="bg-zinc-900 text-white">
+                  {t.name?.toUpperCase() || id.toUpperCase()}
+                </option>
+              ))}
+              <option value="__ADD_NEW_THEME__" className="bg-zinc-900 text-emerald-400 font-bold">
+                ＋ ДОБАВИТЬ СВОЮ ТЕМУ
+              </option>
             </select>
           </div>
         </div>
@@ -2819,7 +3548,7 @@ ${formattedLines}
                 <span>Редактирование профиля</span>
               </h3>
               <p className="text-[11px] text-zinc-500 mt-1 leading-normal font-sans">
-                Настройте свой визуальный аватар и цветовой позывной для совместной OSINT-деятельности.
+                Настройте свой визуальный аватар и цвет для совместной работы.
               </p>
             </div>
 
@@ -2841,7 +3570,7 @@ ${formattedLines}
             {/* COLOR PRESETS */}
             <div className="space-y-1.5 text-left">
               <label className="block text-[9px] uppercase font-mono tracking-wider text-zinc-400 font-bold">
-                Цвет позывного (Color Accent)
+                Цветовой акцент (Color Accent)
               </label>
               <div className="flex flex-wrap gap-2">
                 {['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#6366f1', '#e11d48'].map((c) => (
@@ -3082,6 +3811,8 @@ ${formattedLines}
           </div>
         </div>
       )}
+
+      {renderThemeModal()}
 
       {/* Floating self-fading notification toast */}
       {toastNotification && (

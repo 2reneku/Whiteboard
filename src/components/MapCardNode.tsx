@@ -264,7 +264,7 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
       <div className="w-full md:w-1/2 p-3 font-mono text-left flex flex-col justify-between overflow-y-auto min-h-0">
         <div className="flex flex-col space-y-1.5 flex-1 min-h-0">
           <div className="flex items-center justify-between border-b border-zinc-850 pb-1">
-            <span className="text-[10px] font-bold tracking-wider text-rose-500 uppercase glow-text-red">// LOCATION TARGET</span>
+            <span className="text-[10px] font-bold tracking-wider text-rose-500 uppercase glow-text-red">LOCATION TARGET</span>
             <button
               onClick={() => setIsEditing(!isEditing)}
               className="text-[9.5px] text-zinc-400 hover:text-white px-2 py-0.5 rounded-none bg-zinc-900 cursor-pointer border border-zinc-800 hover:bg-zinc-850 hover:border-zinc-700"
@@ -350,7 +350,7 @@ export default function MapCardNode({ node, onUpdateNode, scale = 1 }: MapCardNo
               </div>
               {mapData.notes && (
                 <div className="border-t border-zinc-900 pt-1 mt-1">
-                  <div className="text-[9px] text-zinc-500 font-bold">// ЗАМЕТКА ПО ОБЪЕКТУ:</div>
+                  <div className="text-[9px] text-zinc-500 font-bold">ЗАМЕТКА ПО ОБЪЕКТУ:</div>
                   <p className="text-[10px] text-zinc-300 italic whitespace-pre-wrap font-sans leading-relaxed select-all">
                     {mapData.notes}
                   </p>

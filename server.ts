@@ -324,6 +324,8 @@ app.post("/api/auth/register", rateLimiter(15, 60000), (req, res) => {
     email: `${cleanUsername.toLowerCase()}@whiteboard.com`,
     avatarUrl: "",
     avatarColor: "#" + ["3b82f6", "10b981", "f59e0b", "ef4444", "8b5cf6", "ec4899", "06b6d4"][Math.floor(Math.random() * 7)],
+    selectedTheme: "dark",
+    customThemes: {},
     deviceTokens: rememberDevice ? [deviceToken] : [],
     createdAt: new Date().toISOString()
   };
@@ -338,6 +340,8 @@ app.post("/api/auth/register", rateLimiter(15, 60000), (req, res) => {
     username: cleanUsername,
     avatarUrl: newUser.avatarUrl,
     avatarColor: newUser.avatarColor,
+    selectedTheme: newUser.selectedTheme || "dark",
+    customThemes: newUser.customThemes || {},
     deviceToken: rememberDevice ? deviceToken : undefined
   });
 });
@@ -387,6 +391,8 @@ app.post("/api/auth/login", rateLimiter(20, 60000), (req, res) => {
     username: user.username,
     avatarUrl: user.avatarUrl || "",
     avatarColor: user.avatarColor || "#3b82f6",
+    selectedTheme: user.selectedTheme || "dark",
+    customThemes: user.customThemes || {},
     deviceToken: rememberDevice ? deviceToken : undefined
   });
 });
@@ -442,12 +448,14 @@ app.post("/api/auth/auto-login", (req, res) => {
     success: true, 
     username: user.username,
     avatarUrl: user.avatarUrl || "",
-    avatarColor: user.avatarColor || "#3b82f6"
+    avatarColor: user.avatarColor || "#3b82f6",
+    selectedTheme: user.selectedTheme || "dark",
+    customThemes: user.customThemes || {}
   });
 });
 
 app.post("/api/auth/profile/update", (req, res) => {
-  const { username, avatarUrl, avatarColor } = req.body;
+  const { username, avatarUrl, avatarColor, selectedTheme, customThemes } = req.body;
   if (!username) {
     return res.status(400).json({ error: "Имя (позывной) обязательно для обновления профиля" });
   }
@@ -463,6 +471,8 @@ app.post("/api/auth/profile/update", (req, res) => {
       email: `${username.trim().toLowerCase()}@whiteboard.com`,
       avatarUrl: "",
       avatarColor: "#3b82f6",
+      selectedTheme: "dark",
+      customThemes: {},
       deviceTokens: [],
       createdAt: new Date().toISOString()
     };
@@ -471,6 +481,8 @@ app.post("/api/auth/profile/update", (req, res) => {
 
   if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
   if (avatarColor !== undefined) user.avatarColor = avatarColor;
+  if (selectedTheme !== undefined) user.selectedTheme = selectedTheme;
+  if (customThemes !== undefined) user.customThemes = customThemes;
 
   writeDB(db);
 
@@ -478,7 +490,9 @@ app.post("/api/auth/profile/update", (req, res) => {
     success: true,
     username: user.username,
     avatarUrl: user.avatarUrl || "",
-    avatarColor: user.avatarColor || "#3b82f6"
+    avatarColor: user.avatarColor || "#3b82f6",
+    selectedTheme: user.selectedTheme || "dark",
+    customThemes: user.customThemes || {}
   });
 });
 

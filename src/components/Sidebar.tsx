@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ThemeColors, BoardComment } from '../types';
+import { ThemeColors, BoardComment, isStyleColor } from '../types';
 import { FolderOpen, Plus, Trash2, Edit2, MessageSquare, Send, Calendar, Clock, Lock, Pointer, Layout, Pencil, Link2, FileText, Grid3X3, Maximize2, Map as MapIcon } from 'lucide-react';
 
 interface Board {
@@ -90,12 +90,19 @@ export default function Sidebar({
   };
 
   return (
-    <div className={`w-80 h-full border-r ${themeColors.sidebarBg} border-zinc-850 flex flex-col pt-3 z-10 select-none`}>
+    <div 
+      className={`w-80 h-full border-r flex flex-col pt-3 z-10 select-none ${isStyleColor(themeColors.sidebarBg) ? '' : themeColors.sidebarBg}`}
+      style={{
+        backgroundColor: isStyleColor(themeColors.sidebarBg) ? themeColors.sidebarBg : undefined,
+        borderColor: isStyleColor(themeColors.cardBorder) ? themeColors.cardBorder : undefined,
+        color: isStyleColor(themeColors.textColor) ? themeColors.textColor : undefined
+      }}
+    >
       {/* Tools Section at the very top */}
       <div className="px-4 pb-3.5 border-b border-zinc-900/60 flex flex-col space-y-2.5">
         <div className="flex items-center justify-between">
           <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-450 font-bold glow-text-indigo">
-            // ИНСТРУМЕНТЫ РАССЛЕДОВАНИЯ
+            ИНСТРУМЕНТЫ И ФУНКЦИИ
           </span>
           <span className="bg-zinc-900 text-zinc-400 font-mono text-[8.5px] px-2 py-0.5 rounded-none uppercase font-bold border border-zinc-800">
             {currentUsername}
@@ -201,7 +208,7 @@ export default function Sidebar({
       {/* ── Delo / Boards section */}
       <div className="p-3 border-b border-zinc-900/60 flex flex-col space-y-2 max-h-[220px] overflow-y-auto shrink-0 scrollbar-thin">
         <div className="flex items-center justify-between">
-          <span className="text-[9.5px] font-mono tracking-wider text-zinc-500 font-bold uppercase">// ДОСКИ И ПРОЕКТЫ</span>
+          <span className="text-[9.5px] font-mono tracking-wider text-zinc-500 font-bold uppercase">ДОСКИ И ПРОЕКТЫ</span>
           <button
             onClick={onCreateBoard}
             className="p-1 px-1.5 hover:bg-zinc-900 hover:border-zinc-800 border border-transparent rounded-none text-zinc-400 hover:text-indigo-400 cursor-pointer flex items-center space-x-1"
@@ -331,7 +338,7 @@ export default function Sidebar({
       {/* ── Co-op discussions and comments chat feed */}
       <div className="flex-1 min-h-0 flex flex-col p-3.5 bg-zinc-950/20 select-text">
         <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-505 block mb-2 font-bold flex items-center glow-text-indigo">
-          <MessageSquare className="w-3.5 h-3.5 mr-1.5 text-indigo-500" /> // ОБСУЖДЕНИЕ И ЧАТ (SSE)
+          <MessageSquare className="w-3.5 h-3.5 mr-1.5 text-indigo-500" /> ОБСУЖДЕНИЕ И ЧАТ (SSE)
         </span>
 
         {/* Scrollable comments stream card */}

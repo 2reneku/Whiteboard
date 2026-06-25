@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, MouseEvent as ReactMouseEvent } from 'react';
-import { OSINTNode, OSINTEdge, PeerCursor, ThemeColors, BoardStroke, BoardComment } from '../types';
+import { OSINTNode, OSINTEdge, PeerCursor, ThemeColors, BoardStroke, BoardComment, isStyleColor } from '../types';
 import { Link2, Trash2, Plus, Sparkles, Edit2, Layout, RotateCw, Beer } from 'lucide-react';
 import MapCardNode from './MapCardNode';
 
@@ -297,8 +297,8 @@ export default function Canvas({
         `%c🔌 [OSINT_DEBUG] Focus Event Blur (onBlur) triggered style/input changes!`,
         "color: #fb7185; font-size: 11px;",
         {
-          blurredElement: e.target,
-          relatedTarget: e.relatedTarget
+          blurredElement: e.target ? (e.target as any).id || (e.target as any).tagName || String(e.target) : null,
+          relatedTarget: e.relatedTarget ? (e.relatedTarget as any).id || (e.relatedTarget as any).tagName || String(e.relatedTarget) : null
         }
       );
     };
@@ -1396,7 +1396,8 @@ export default function Canvas({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative overflow-hidden select-none outline-none ${getToolCursorStyle()} ${themeColors.bg}`}
+      className={`w-full h-full relative overflow-hidden select-none outline-none ${getToolCursorStyle()} ${isStyleColor(themeColors.bg) ? '' : themeColors.bg}`}
+      style={{ backgroundColor: isStyleColor(themeColors.bg) ? themeColors.bg : undefined }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -2021,7 +2022,7 @@ export default function Canvas({
                         setEditingNodeId(null);
                       }
                     }}
-                    className="w-full text-[1em] bg-transparent border-none text-zinc-100 outline-none resize-none placeholder-zinc-500 leading-relaxed font-normal whitespace-pre-wrap select-text cursor-text pointer-events-auto min-h-0 focus:outline-none [&_p]:m-0 [&_div]:m-0"
+                    className="w-full text-[1em] bg-transparent border-none text-zinc-100 outline-none resize-none placeholder-zinc-500 leading-relaxed whitespace-pre-wrap select-text cursor-text pointer-events-auto min-h-0 focus:outline-none [&_p]:m-0 [&_div]:m-0"
                   />
                 ) : node.mapData ? (
                   <MapCardNode node={node} onUpdateNode={onUpdateNode} />
@@ -2149,11 +2150,11 @@ export default function Canvas({
                   getCleanPlainTextFromHTML(node.label).toLowerCase() === 'beer --' ? (
                     <div className="flex flex-col items-center justify-center p-3 w-full h-full text-amber-500 animate-pulse select-none pointer-events-none">
                       <Beer className="w-12 h-12 filter drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-                      <span className="text-[10px] font-mono text-zinc-400 mt-1 uppercase tracking-wider">// CHEERS!</span>
+                      <span className="text-[10px] font-mono text-zinc-400 mt-1 uppercase tracking-wider">CHEERS!</span>
                     </div>
                   ) : (
                     <div
-                      className="text-[1em] break-words leading-relaxed whitespace-pre-wrap select-text font-normal [&_p]:m-0 [&_div]:m-0"
+                      className="text-[1em] break-words leading-relaxed whitespace-pre-wrap select-text [&_p]:m-0 [&_div]:m-0"
                       dangerouslySetInnerHTML={{ __html: sanitizeHTML(node.label) || "Заметка..." }}
                     />
                   )
@@ -2335,39 +2336,40 @@ export default function Canvas({
                 }}
               >
                 {/* T Type Icon */}
-                <div className="flex items-center text-zinc-500 pr-1.5 border-r border-zinc-200">
+                <div className="flex items-center text-zinc-500 pr-1">
                   <span className="font-sans font-bold text-xs uppercase text-zinc-700 tracking-wider">T</span>
                 </div>
-
-                {/* Font Family selector */}
-                <select
-                  value={node.fontFamily || 'sans'}
-                  onChange={(e) => {
-                    onUpdateNode({ ...node, fontFamily: e.target.value as any });
-                  }}
-                  className="bg-transparent text-[11px] font-sans font-medium text-zinc-700 outline-none border-none cursor-pointer pr-1"
-                >
-                  <option value="sans">Inter (Sans)</option>
-                  <option value="serif">Georgia (Serif)</option>
-                  <option value="mono">JetBrains Mono</option>
-                  <option value="cursive">Comic Sans</option>
-                </select>
-
-                <div className="w-px h-4.5 bg-zinc-200" />
 
                 {/* Font Size stepper */}
                 <div className="flex items-center space-x-1">
                   <input
                     type="text"
-                    value={node.fontSize || 14}
-                    readOnly
-                    className="w-5 text-center text-xs font-mono font-bold text-zinc-800 bg-transparent border-none outline-none"
+                    value={node.fontSize === 0 ? '' : (node.fontSize || 14)}
+                    onChange={(e) => {
+                      const cleanVal = e.target.value.replace(/\D/g, '');
+                      if (cleanVal === '') {
+                        onUpdateNode({ ...node, fontSize: 0 });
+                      } else {
+                        const num = parseInt(cleanVal, 10);
+                        if (!isNaN(num)) {
+                          onUpdateNode({ ...node, fontSize: Math.min(120, num) });
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      const currentSize = node.fontSize;
+                      if (!currentSize || currentSize < 8) {
+                        onUpdateNode({ ...node, fontSize: 8 });
+                      }
+                    }}
+                    className="w-8 text-center text-xs font-mono font-bold text-zinc-800 bg-zinc-100 focus:bg-zinc-150 border border-zinc-200 focus:border-zinc-300 rounded outline-none py-0.5"
+                    title="Размер шрифта (можно вписать число вручную)"
                   />
                   <div className="flex flex-col -space-y-0.5">
                     <button
                       onClick={() => {
                         const currentSize = node.fontSize || 14;
-                        onUpdateNode({ ...node, fontSize: Math.min(64, currentSize + 2) });
+                        onUpdateNode({ ...node, fontSize: Math.min(120, currentSize + 1) });
                       }}
                       className="p-0.2 hover:bg-zinc-150 rounded text-[9px] font-bold text-zinc-650 cursor-pointer"
                     >
@@ -2376,7 +2378,7 @@ export default function Canvas({
                     <button
                       onClick={() => {
                         const currentSize = node.fontSize || 14;
-                        onUpdateNode({ ...node, fontSize: Math.max(8, currentSize - 2) });
+                        onUpdateNode({ ...node, fontSize: Math.max(8, currentSize - 1) });
                       }}
                       className="p-0.2 hover:bg-zinc-150 rounded text-[9px] font-bold text-zinc-650 cursor-pointer"
                     >
@@ -2491,19 +2493,7 @@ export default function Canvas({
                   🔳
                 </button>
 
-                <div className="w-px h-4.5 bg-zinc-200" />
-
-                {/* AI Spark button */}
-                <button
-                  onClick={() => {
-                    if (onRunVerification) onRunVerification(node);
-                  }}
-                  className="p-1 px-2.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-750 cursor-pointer flex items-center justify-center space-x-1.5 font-bold shadow-sm transition-all text-[10px] uppercase font-mono"
-                  title="Запустить AI Анализ OSINT"
-                >
-                  <span>✨</span>
-                  <span>AI</span>
-                </button>
+                {/* Removed AI Analytics and other spacing items */}
               </div>
             );
           })()}
@@ -2864,7 +2854,7 @@ export default function Canvas({
               ))}
             </div>
 
-            <div className="px-2.5 py-1 text-[9px] uppercase font-bold text-zinc-550">Добавить OSINT связи:</div>
+            <div className="px-2.5 py-1 text-[9px] uppercase font-bold text-zinc-550">Добавить связи:</div>
 
             {/* Cascading Menu Number */}
             <div className="relative group no-deselect">
