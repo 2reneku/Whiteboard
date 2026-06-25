@@ -228,9 +228,15 @@ export default function Canvas({
 
   // Figma style Smart Alignment Guides Interface & State
   interface AlignmentGuide {
-    type: 'h' | 'v';
+    type: 'h' | 'v' | 'spacing';
     coord: number;
     isCenter?: boolean;
+    minVal?: number;
+    maxVal?: number;
+    spacingVal?: number;
+    labelX?: number;
+    labelY?: number;
+    gaps?: { start: number; end: number; type: 'h' | 'v' }[];
   }
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
 
@@ -242,7 +248,7 @@ export default function Canvas({
   } | null>(null);
   const [activeColorDropdown, setActiveColorDropdown] = useState<'text' | 'bg' | null>(null);
   const dragStartMouseRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const initialNodesRef = useRef<{ id: string; x: number; y: number }[]>([]);
+  const initialNodesRef = useRef<{ id: string; x: number; y: number; width?: number; height?: number }[]>([]);
   const initialStrokesRef = useRef<{ id: string; x: number; y: number }[]>([]);
 
   // Double click line editing
@@ -615,26 +621,57 @@ export default function Canvas({
     const activeInitial = initialNodesRef.current.find(n => n.id === activeId);
     if (!activeInitial) return { snappedDX: dx, snappedDY: dy, guides: [] };
 
-    const w = activeInitial.width;
-    const h = activeInitial.height;
+    const activeNode = nodes.find(n => n.id === activeId);
+    const w = activeInitial.width ?? activeNode?.width ?? 120;
+    const h = activeInitial.height ?? activeNode?.height ?? 80;
     
     // TENTATIVE positions before snapping
     let tentativeX = activeInitial.x + dx;
     let tentativeY = activeInitial.y + dy;
 
     const snapThreshold = 8; // Snap threshold in canvas pixels
-    let bestDeltaX = 0;
-    let bestDeltaY = 0;
-    let minSnapDistanceX = Infinity;
-    let minSnapDistanceY = Infinity;
-
-    const guides: AlignmentGuide[] = [];
 
     // Filter relevant comparative nodes (ignore active and other currently selected nodes)
     const otherNodes = nodes.filter(n => n.id !== activeId && !selectedNodeIds.includes(n.id));
 
-    // 1. HORIZONTAL SNAPPING / VERTICAL GUIDES
-    otherNodes.forEach(other => {
+    // Performance optimization (Point 6): Sort other nodes by distance and take the closest 40
+    const sortedOthers = [...otherNodes].sort((a, b) => {
+      const distA = Math.hypot(a.x - tentativeX, a.y - tentativeY);
+      const distB = Math.hypot(b.x - tentativeX, b.y - tentativeY);
+      return distA - distB;
+    });
+    const nearbyOthers = sortedOthers.slice(0, 40);
+
+    // Collect X Snap Candidates
+    interface CandidateX {
+      delta: number;
+      type: 'center' | 'edge' | 'spacing';
+      coord: number;
+      isCenter: boolean;
+      minY: number;
+      maxY: number;
+      otherNodeIds: string[];
+      spacingGap?: number;
+      gaps?: { start: number; end: number; type: 'h' | 'v' }[];
+    }
+    const candidatesX: CandidateX[] = [];
+
+    // Collect Y Snap Candidates
+    interface CandidateY {
+      delta: number;
+      type: 'center' | 'edge' | 'spacing';
+      coord: number;
+      isCenter: boolean;
+      minX: number;
+      maxX: number;
+      otherNodeIds: string[];
+      spacingGap?: number;
+      gaps?: { start: number; end: number; type: 'h' | 'v' }[];
+    }
+    const candidatesY: CandidateY[] = [];
+
+    // 1. EDGES AND CENTERS SNAPPING - X (VERTICAL LINES)
+    nearbyOthers.forEach(other => {
       const otherL = other.x;
       const otherCX = other.x + other.width / 2;
       const otherR = other.x + other.width;
@@ -644,28 +681,35 @@ export default function Canvas({
       const activeR = tentativeX + w;
 
       const xMatches = [
-        { activeVal: activeL, otherVal: otherL, delta: otherL - activeL },
-        { activeVal: activeCX, otherVal: otherCX, delta: otherCX - activeCX },
-        { activeVal: activeR, otherVal: otherR, delta: otherR - activeR },
-        { activeVal: activeL, otherVal: otherR, delta: otherR - activeL },
-        { activeVal: activeR, otherVal: otherL, delta: otherL - activeR },
+        // Center-Center
+        { activeVal: activeCX, otherVal: otherCX, delta: otherCX - activeCX, type: 'center' as const, isCenter: true },
+        // Edges
+        { activeVal: activeL, otherVal: otherL, delta: otherL - activeL, type: 'edge' as const, isCenter: false },
+        { activeVal: activeR, otherVal: otherR, delta: otherR - activeR, type: 'edge' as const, isCenter: false },
+        { activeVal: activeL, otherVal: otherR, delta: otherR - activeL, type: 'edge' as const, isCenter: false },
+        { activeVal: activeR, otherVal: otherL, delta: otherL - activeR, type: 'edge' as const, isCenter: false },
       ];
 
       xMatches.forEach(m => {
         const dist = Math.abs(m.delta);
-        if (dist <= snapThreshold && dist < minSnapDistanceX) {
-          minSnapDistanceX = dist;
-          bestDeltaX = m.delta;
+        if (dist <= snapThreshold) {
+          const minY = Math.min(tentativeY, other.y);
+          const maxY = Math.max(tentativeY + h, other.y + other.height);
+          candidatesX.push({
+            delta: m.delta,
+            type: m.type,
+            coord: m.otherVal,
+            isCenter: m.isCenter,
+            minY,
+            maxY,
+            otherNodeIds: [other.id]
+          });
         }
       });
     });
 
-    if (minSnapDistanceX !== Infinity) {
-      tentativeX += bestDeltaX;
-    }
-
-    // 2. VERTICAL SNAPPING / HORIZONTAL GUIDES
-    otherNodes.forEach(other => {
+    // 2. EDGES AND CENTERS SNAPPING - Y (HORIZONTAL LINES)
+    nearbyOthers.forEach(other => {
       const otherT = other.y;
       const otherCY = other.y + other.height / 2;
       const otherB = other.y + other.height;
@@ -675,62 +719,319 @@ export default function Canvas({
       const activeB = tentativeY + h;
 
       const yMatches = [
-        { activeVal: activeT, otherVal: otherT, delta: otherT - activeT },
-        { activeVal: activeCY, otherVal: otherCY, delta: otherCY - activeCY },
-        { activeVal: activeB, otherVal: otherB, delta: otherB - activeB },
-        { activeVal: activeT, otherVal: otherB, delta: otherB - activeT },
-        { activeVal: activeB, otherVal: otherT, delta: otherT - activeB },
+        // Center-Center
+        { activeVal: activeCY, otherVal: otherCY, delta: otherCY - activeCY, type: 'center' as const, isCenter: true },
+        // Edges
+        { activeVal: activeT, otherVal: otherT, delta: otherT - activeT, type: 'edge' as const, isCenter: false },
+        { activeVal: activeB, otherVal: otherB, delta: otherB - activeB, type: 'edge' as const, isCenter: false },
+        { activeVal: activeT, otherVal: otherB, delta: otherB - activeT, type: 'edge' as const, isCenter: false },
+        { activeVal: activeB, otherVal: otherT, delta: otherT - activeB, type: 'edge' as const, isCenter: false },
       ];
 
       yMatches.forEach(m => {
         const dist = Math.abs(m.delta);
-        if (dist <= snapThreshold && dist < minSnapDistanceY) {
-          minSnapDistanceY = dist;
-          bestDeltaY = m.delta;
+        if (dist <= snapThreshold) {
+          const minX = Math.min(tentativeX, other.x);
+          const maxX = Math.max(tentativeX + w, other.x + other.width);
+          candidatesY.push({
+            delta: m.delta,
+            type: m.type,
+            coord: m.otherVal,
+            isCenter: m.isCenter,
+            minX,
+            maxX,
+            otherNodeIds: [other.id]
+          });
         }
       });
     });
 
-    if (minSnapDistanceY !== Infinity) {
-      tentativeY += bestDeltaY;
+    // 3. EQUAL SPACING SNAPPING - X (HORIZONTAL ROW)
+    for (let i = 0; i < nearbyOthers.length; i++) {
+      for (let j = i + 1; j < nearbyOthers.length; j++) {
+        const A = nearbyOthers[i];
+        const B = nearbyOthers[j];
+
+        const verticalDist = Math.abs((A.y + A.height / 2) - (B.y + B.height / 2));
+        if (verticalDist < 150) {
+          const leftNode = A.x < B.x ? A : B;
+          const rightNode = A.x < B.x ? B : A;
+          const gap = rightNode.x - (leftNode.x + leftNode.width);
+
+          if (gap > 4) {
+            const verticalDistActive = Math.abs((activeInitial.y + h / 2) - (leftNode.y + leftNode.height / 2));
+            if (verticalDistActive < 150) {
+              // Subcase X1: Active is on the right of rightNode
+              const targetX1 = rightNode.x + rightNode.width + gap;
+              const deltaX1 = targetX1 - tentativeX;
+              if (Math.abs(deltaX1) <= snapThreshold) {
+                const finalActiveX = targetX1;
+                const gaps = [
+                  { start: leftNode.x + leftNode.width, end: rightNode.x, type: 'h' as const },
+                  { start: rightNode.x + rightNode.width, end: finalActiveX, type: 'h' as const }
+                ];
+                candidatesX.push({
+                  delta: deltaX1,
+                  type: 'spacing',
+                  coord: targetX1,
+                  isCenter: false,
+                  minY: Math.min(leftNode.y, rightNode.y, tentativeY),
+                  maxY: Math.max(leftNode.y + leftNode.height, rightNode.y + rightNode.height, tentativeY + h),
+                  otherNodeIds: [leftNode.id, rightNode.id],
+                  spacingGap: gap,
+                  gaps
+                });
+              }
+
+              // Subcase X2: Active is on the left of leftNode
+              const targetX2 = leftNode.x - gap - w;
+              const deltaX2 = targetX2 - tentativeX;
+              if (Math.abs(deltaX2) <= snapThreshold) {
+                const finalActiveX = targetX2;
+                const gaps = [
+                  { start: finalActiveX + w, end: leftNode.x, type: 'h' as const },
+                  { start: leftNode.x + leftNode.width, end: rightNode.x, type: 'h' as const }
+                ];
+                candidatesX.push({
+                  delta: deltaX2,
+                  type: 'spacing',
+                  coord: targetX2,
+                  isCenter: false,
+                  minY: Math.min(leftNode.y, rightNode.y, tentativeY),
+                  maxY: Math.max(leftNode.y + leftNode.height, rightNode.y + rightNode.height, tentativeY + h),
+                  otherNodeIds: [leftNode.id, rightNode.id],
+                  spacingGap: gap,
+                  gaps
+                });
+              }
+
+              // Subcase X3: Active is between leftNode and rightNode
+              const targetX3 = (leftNode.x + leftNode.width + rightNode.x - w) / 2;
+              const deltaX3 = targetX3 - tentativeX;
+              if (Math.abs(deltaX3) <= snapThreshold) {
+                const finalActiveX = targetX3;
+                const finalGap = finalActiveX - (leftNode.x + leftNode.width);
+                const gaps = [
+                  { start: leftNode.x + leftNode.width, end: finalActiveX, type: 'h' as const },
+                  { start: finalActiveX + w, end: rightNode.x, type: 'h' as const }
+                ];
+                candidatesX.push({
+                  delta: deltaX3,
+                  type: 'spacing',
+                  coord: targetX3,
+                  isCenter: false,
+                  minY: Math.min(leftNode.y, rightNode.y, tentativeY),
+                  maxY: Math.max(leftNode.y + leftNode.height, rightNode.y + rightNode.height, tentativeY + h),
+                  otherNodeIds: [leftNode.id, rightNode.id],
+                  spacingGap: finalGap,
+                  gaps
+                });
+              }
+            }
+          }
+        }
+      }
     }
 
-    // 3. GENERATION OF ALIGNED GUIDES BASED ON FINAL SNAPPED VALUE
-    const matchedCoordsX = new Map<number, boolean>();
-    const matchedCoordsY = new Map<number, boolean>();
+    // 4. EQUAL SPACING SNAPPING - Y (VERTICAL COLUMN)
+    for (let i = 0; i < nearbyOthers.length; i++) {
+      for (let j = i + 1; j < nearbyOthers.length; j++) {
+        const A = nearbyOthers[i];
+        const B = nearbyOthers[j];
 
-    otherNodes.forEach(other => {
-      const otherL = other.x;
-      const otherCX = other.x + other.width / 2;
-      const otherR = other.x + other.width;
+        const horizontalDist = Math.abs((A.x + A.width / 2) - (B.x + B.width / 2));
+        if (horizontalDist < 150) {
+          const topNode = A.y < B.y ? A : B;
+          const bottomNode = A.y < B.y ? B : A;
+          const gap = bottomNode.y - (topNode.y + topNode.height);
 
-      const activeL = tentativeX;
-      const activeCX = tentativeX + w / 2;
-      const activeR = tentativeX + w;
+          if (gap > 4) {
+            const horizontalDistActive = Math.abs((activeInitial.x + w / 2) - (topNode.x + topNode.width / 2));
+            if (horizontalDistActive < 150) {
+              // Subcase Y1: Active is below bottomNode
+              const targetY1 = bottomNode.y + bottomNode.height + gap;
+              const deltaY1 = targetY1 - tentativeY;
+              if (Math.abs(deltaY1) <= snapThreshold) {
+                const finalActiveY = targetY1;
+                const gaps = [
+                  { start: topNode.y + topNode.height, end: bottomNode.y, type: 'v' as const },
+                  { start: bottomNode.y + bottomNode.height, end: finalActiveY, type: 'v' as const }
+                ];
+                candidatesY.push({
+                  delta: deltaY1,
+                  type: 'spacing',
+                  coord: targetY1,
+                  isCenter: false,
+                  minX: Math.min(topNode.x, bottomNode.x, tentativeX),
+                  maxX: Math.max(topNode.x + topNode.width, bottomNode.x + bottomNode.width, tentativeX + w),
+                  otherNodeIds: [topNode.id, bottomNode.id],
+                  spacingGap: gap,
+                  gaps
+                });
+              }
 
-      const otherT = other.y;
-      const otherCY = other.y + other.height / 2;
-      const otherB = other.y + other.height;
+              // Subcase Y2: Active is above topNode
+              const targetY2 = topNode.y - gap - h;
+              const deltaY2 = targetY2 - tentativeY;
+              if (Math.abs(deltaY2) <= snapThreshold) {
+                const finalActiveY = targetY2;
+                const gaps = [
+                  { start: finalActiveY + h, end: topNode.y, type: 'v' as const },
+                  { start: topNode.y + topNode.height, end: bottomNode.y, type: 'v' as const }
+                ];
+                candidatesY.push({
+                  delta: deltaY2,
+                  type: 'spacing',
+                  coord: targetY2,
+                  isCenter: false,
+                  minX: Math.min(topNode.x, bottomNode.x, tentativeX),
+                  maxX: Math.max(topNode.x + topNode.width, bottomNode.x + bottomNode.width, tentativeX + w),
+                  otherNodeIds: [topNode.id, bottomNode.id],
+                  spacingGap: gap,
+                  gaps
+                });
+              }
 
-      const activeT = tentativeY;
-      const activeCY = tentativeY + h / 2;
-      const activeB = tentativeY + h;
+              // Subcase Y3: Active is between topNode and bottomNode
+              const targetY3 = (topNode.y + topNode.height + bottomNode.y - h) / 2;
+              const deltaY3 = targetY3 - tentativeY;
+              if (Math.abs(deltaY3) <= snapThreshold) {
+                const finalActiveY = targetY3;
+                const finalGap = finalActiveY - (topNode.y + topNode.height);
+                const gaps = [
+                  { start: topNode.y + topNode.height, end: finalActiveY, type: 'v' as const },
+                  { start: finalActiveY + h, end: bottomNode.y, type: 'v' as const }
+                ];
+                candidatesY.push({
+                  delta: deltaY3,
+                  type: 'spacing',
+                  coord: targetY3,
+                  isCenter: false,
+                  minX: Math.min(topNode.x, bottomNode.x, tentativeX),
+                  maxX: Math.max(topNode.x + topNode.width, bottomNode.x + bottomNode.width, tentativeX + w),
+                  otherNodeIds: [topNode.id, bottomNode.id],
+                  spacingGap: finalGap,
+                  gaps
+                });
+              }
+            }
+          }
+        }
+      }
+    }
 
-      if (Math.abs(activeL - otherL) < 1.1) matchedCoordsX.set(otherL, matchedCoordsX.get(otherL) || false);
-      if (Math.abs(activeCX - otherCX) < 1.1) matchedCoordsX.set(otherCX, true);
-      if (Math.abs(activeR - otherR) < 1.1) matchedCoordsX.set(otherR, matchedCoordsX.get(otherR) || false);
-      if (Math.abs(activeL - otherR) < 1.1) matchedCoordsX.set(otherR, matchedCoordsX.get(otherR) || false);
-      if (Math.abs(activeR - otherL) < 1.1) matchedCoordsX.set(otherL, matchedCoordsX.get(otherL) || false);
+    // 5. SELECTION AND PRIORITY RESOLUTION (Point 7)
+    const selectBestCandidate = <T extends { type: 'center' | 'edge' | 'spacing'; delta: number }>(
+      candidates: T[]
+    ): T | null => {
+      if (candidates.length === 0) return null;
+      const sorted = [...candidates].sort((a, b) => {
+        const priorityA = a.type === 'center' ? 1 : a.type === 'edge' ? 2 : 3;
+        const priorityB = b.type === 'center' ? 1 : b.type === 'edge' ? 2 : 3;
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+        return Math.abs(a.delta) - Math.abs(b.delta);
+      });
+      return sorted[0];
+    };
 
-      if (Math.abs(activeT - otherT) < 1.1) matchedCoordsY.set(otherT, matchedCoordsY.get(otherT) || false);
-      if (Math.abs(activeCY - otherCY) < 1.1) matchedCoordsY.set(otherCY, true);
-      if (Math.abs(activeB - otherB) < 1.1) matchedCoordsY.set(otherB, matchedCoordsY.get(otherB) || false);
-      if (Math.abs(activeT - otherB) < 1.1) matchedCoordsY.set(otherB, matchedCoordsY.get(otherB) || false);
-      if (Math.abs(activeB - otherT) < 1.1) matchedCoordsY.set(otherT, matchedCoordsY.get(otherT) || false);
-    });
+    const bestX = selectBestCandidate(candidatesX);
+    const bestY = selectBestCandidate(candidatesY);
 
-    matchedCoordsX.forEach((isCtr, coord) => guides.push({ type: 'v', coord, isCenter: isCtr }));
-    matchedCoordsY.forEach((isCtr, coord) => guides.push({ type: 'h', coord, isCenter: isCtr }));
+    if (bestX) {
+      tentativeX += bestX.delta;
+    }
+    if (bestY) {
+      tentativeY += bestY.delta;
+    }
+
+    // 6. DETAILED GUIDE LINE GENERATION BETWEEN OBJECTS
+    const guides: AlignmentGuide[] = [];
+
+    if (bestX) {
+      if (bestX.type === 'spacing') {
+        guides.push({
+          type: 'spacing',
+          coord: bestX.coord,
+          spacingVal: bestX.spacingGap,
+          gaps: bestX.gaps,
+          labelX: tentativeX + w / 2,
+          labelY: tentativeY + h / 2
+        });
+      } else {
+        otherNodes.forEach(other => {
+          const otherL = other.x;
+          const otherCX = other.x + other.width / 2;
+          const otherR = other.x + other.width;
+
+          const activeL = tentativeX;
+          const activeCX = tentativeX + w / 2;
+          const activeR = tentativeX + w;
+
+          const isAligned = 
+            (bestX.isCenter && Math.abs(activeCX - otherCX) < 1.1) ||
+            (!bestX.isCenter && (
+              Math.abs(activeL - otherL) < 1.1 ||
+              Math.abs(activeR - otherR) < 1.1 ||
+              Math.abs(activeL - otherR) < 1.1 ||
+              Math.abs(activeR - otherL) < 1.1
+            ));
+
+          if (isAligned) {
+            guides.push({
+              type: 'v',
+              coord: bestX.coord,
+              isCenter: bestX.isCenter,
+              minVal: Math.min(tentativeY, other.y),
+              maxVal: Math.max(tentativeY + h, other.y + other.height)
+            });
+          }
+        });
+      }
+    }
+
+    if (bestY) {
+      if (bestY.type === 'spacing') {
+        guides.push({
+          type: 'spacing',
+          coord: bestY.coord,
+          spacingVal: bestY.spacingGap,
+          gaps: bestY.gaps,
+          labelX: tentativeX + w / 2,
+          labelY: tentativeY + h / 2
+        });
+      } else {
+        otherNodes.forEach(other => {
+          const otherT = other.y;
+          const otherCY = other.y + other.height / 2;
+          const otherB = other.y + other.height;
+
+          const activeT = tentativeY;
+          const activeCY = tentativeY + h / 2;
+          const activeB = tentativeY + h;
+
+          const isAligned = 
+            (bestY.isCenter && Math.abs(activeCY - otherCY) < 1.1) ||
+            (!bestY.isCenter && (
+              Math.abs(activeT - otherT) < 1.1 ||
+              Math.abs(activeB - otherB) < 1.1 ||
+              Math.abs(activeT - otherB) < 1.1 ||
+              Math.abs(activeB - otherT) < 1.1
+            ));
+
+          if (isAligned) {
+            guides.push({
+              type: 'h',
+              coord: bestY.coord,
+              isCenter: bestY.isCenter,
+              minVal: Math.min(tentativeX, other.x),
+              maxVal: Math.max(tentativeX + w, other.x + other.width)
+            });
+          }
+        });
+      }
+    }
 
     return {
       snappedDX: tentativeX - activeInitial.x,
@@ -1209,7 +1510,7 @@ export default function Canvas({
     setDraggedNodeId(id);
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     dragStartMouseRef.current = { x: e.clientX, y: e.clientY };
-    initialNodesRef.current = nodes.map(n => ({ id: n.id, x: n.x, y: n.y }));
+    initialNodesRef.current = nodes.map(n => ({ id: n.id, x: n.x, y: n.y, width: n.width, height: n.height }));
     initialStrokesRef.current = strokes.map(s => ({ id: s.id, x: s.x, y: s.y }));
   };
 
@@ -1236,7 +1537,7 @@ export default function Canvas({
     setDraggedStrokeId(id);
     dragStartRef.current = { x: e.clientX, y: e.clientY };
     dragStartMouseRef.current = { x: e.clientX, y: e.clientY };
-    initialNodesRef.current = nodes.map(n => ({ id: n.id, x: n.x, y: n.y }));
+    initialNodesRef.current = nodes.map(n => ({ id: n.id, x: n.x, y: n.y, width: n.width, height: n.height }));
     initialStrokesRef.current = strokes.map(s => ({ id: s.id, x: s.x, y: s.y }));
   };
 
@@ -1467,15 +1768,138 @@ export default function Canvas({
             const strokeWidth = guide.isCenter ? '1.5' : '1.25';
             const dashArray = guide.isCenter ? '6,3' : '4,4';
 
+            if (guide.type === 'spacing' && guide.gaps) {
+              const centerY = guide.labelY ?? 0;
+              const centerX = guide.labelX ?? 0;
+              return (
+                <g key={`smart-guide-spacing-${idx}`} className="pointer-events-none select-none">
+                  {guide.gaps.map((gap, gIdx) => {
+                    const gapVal = Math.round(guide.spacingVal ?? 0);
+                    if (gap.type === 'h') {
+                      const midX = (gap.start + gap.end) / 2;
+                      return (
+                        <g key={`gap-h-${gIdx}`}>
+                          {/* Main thin line across the gap */}
+                          <line
+                            x1={gap.start}
+                            y1={centerY}
+                            x2={gap.end}
+                            y2={centerY}
+                            stroke="#ec4899"
+                            strokeWidth="1.25"
+                          />
+                          {/* Left boundary tick */}
+                          <line
+                            x1={gap.start}
+                            y1={centerY - 5}
+                            x2={gap.start}
+                            y2={centerY + 5}
+                            stroke="#ec4899"
+                            strokeWidth="1.25"
+                          />
+                          {/* Right boundary tick */}
+                          <line
+                            x1={gap.end}
+                            y1={centerY - 5}
+                            x2={gap.end}
+                            y2={centerY + 5}
+                            stroke="#ec4899"
+                            strokeWidth="1.25"
+                          />
+                          {/* Value badge background */}
+                          <rect
+                            x={midX - 18}
+                            y={centerY - 8}
+                            width={36}
+                            height={16}
+                            rx={3}
+                            fill="#ec4899"
+                          />
+                          {/* Value text */}
+                          <text
+                            x={midX}
+                            y={centerY + 4}
+                            fill="#ffffff"
+                            fontSize="9"
+                            fontFamily="monospace"
+                            fontWeight="bold"
+                            textAnchor="middle"
+                          >
+                            {gapVal}
+                          </text>
+                        </g>
+                      );
+                    } else {
+                      const midY = (gap.start + gap.end) / 2;
+                      return (
+                        <g key={`gap-v-${gIdx}`}>
+                          {/* Main thin line across the gap */}
+                          <line
+                            x1={centerX}
+                            y1={gap.start}
+                            x2={centerX}
+                            y2={gap.end}
+                            stroke="#ec4899"
+                            strokeWidth="1.25"
+                          />
+                          {/* Top boundary tick */}
+                          <line
+                            x1={centerX - 5}
+                            y1={gap.start}
+                            x2={centerX + 5}
+                            y2={gap.start}
+                            stroke="#ec4899"
+                            strokeWidth="1.25"
+                          />
+                          {/* Bottom boundary tick */}
+                          <line
+                            x1={centerX - 5}
+                            y1={gap.end}
+                            x2={centerX + 5}
+                            y2={gap.end}
+                            stroke="#ec4899"
+                            strokeWidth="1.25"
+                          />
+                          {/* Value badge background */}
+                          <rect
+                            x={centerX - 18}
+                            y={midY - 8}
+                            width={36}
+                            height={16}
+                            rx={3}
+                            fill="#ec4899"
+                          />
+                          {/* Value text */}
+                          <text
+                            x={centerX}
+                            y={midY + 4}
+                            fill="#ffffff"
+                            fontSize="9"
+                            fontFamily="monospace"
+                            fontWeight="bold"
+                            textAnchor="middle"
+                          >
+                            {gapVal}
+                          </text>
+                        </g>
+                      );
+                    }
+                  })}
+                </g>
+              );
+            }
+
             if (guide.type === 'v') {
+              const y1 = guide.minVal !== undefined ? guide.minVal : -30000;
+              const y2 = guide.maxVal !== undefined ? guide.maxVal : 30000;
               return (
                 <g key={`smart-guide-v-group-${idx}`}>
                   <line
                     key={`smart-guide-v-${idx}`}
                     x1={guide.coord}
-                    y1={-30000}
+                    y1={y1}
                     x2={guide.coord}
-                    y2={30000}
+                    y2={y2}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
                     strokeDasharray={dashArray}
@@ -1484,7 +1908,7 @@ export default function Canvas({
                   {guide.isCenter && (
                     <text
                       x={guide.coord + 8}
-                      y={-1000} // A high standard offset, or we can just render the clean line or let it shine
+                      y={y1 + 20}
                       fill="#06b6d4"
                       fontSize="9"
                       fontFamily="monospace"
@@ -1497,13 +1921,15 @@ export default function Canvas({
                 </g>
               );
             } else {
+              const x1 = guide.minVal !== undefined ? guide.minVal : -30000;
+              const x2 = guide.maxVal !== undefined ? guide.maxVal : 30000;
               return (
                 <g key={`smart-guide-h-group-${idx}`}>
                   <line
                     key={`smart-guide-h-${idx}`}
-                    x1={-30000}
+                    x1={x1}
                     y1={guide.coord}
-                    x2={30000}
+                    x2={x2}
                     y2={guide.coord}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
@@ -1512,7 +1938,7 @@ export default function Canvas({
                   />
                   {guide.isCenter && (
                     <text
-                      x={-1000}
+                      x={x1 + 20}
                       y={guide.coord - 8}
                       fill="#06b6d4"
                       fontSize="9"
